@@ -1,0 +1,8 @@
+{
+  "plugins": [
+    {
+      "name": "user-nodes",
+      "enabled": true
+    }
+  ]
+}

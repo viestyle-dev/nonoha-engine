@@ -1,0 +1,57 @@
+[project]
+name = "nonoha-engine"
+version = "0.11.0-alpha.7"
+description = "nonoha visual node engine"
+license = "AGPL-3.0-only"
+license-files = ["LICENSE", "COMMERCIAL-LICENSE.md", "COMMERCIAL-LICENSE_ja.md"]
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "fastapi~=0.135.0",
+    "starlette~=1.0.0",
+    "uvicorn~=0.44.0",
+    "websockets~=16.0.0",
+    "nonoha-core",
+    "sci-nodes",
+    # numpy is pinned to the exact version shipped for mobile (pypi.flet.dev)
+    # so graphs authored against the engine behave identically on device.
+    "numpy==2.4.6",
+    # Latest scipy that supports Python 3.11 and numpy 2.4 metadata.
+    "scipy==1.17.1",
+    "scikit-learn",
+    "pandas",
+    "cryptography",
+    "pyinstaller",
+    "openpyxl",
+    "python-multipart",
+
+    # For WebRTC codes (future maybe use)
+    # "aiortc",
+    # "av",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["nonoha_engine"]
+
+[tool.uv.sources]
+nonoha-core = { path = "./packages/nonoha-core" }
+sci-nodes = { path = "./packages/sci-nodes" }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0",
+]
+benchmark = [
+  "pytest>=8.0",
+  "pytest-benchmark>=5.0",
+  "httpx>=0.28",
+]
