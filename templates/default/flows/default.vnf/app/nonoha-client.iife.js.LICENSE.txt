@@ -1,0 +1,9 @@
+nonoha-client.iife.js — bundled build of nonoha-client-js
+Copyright 2026 VIE, Inc.
+Licensed under the Apache License, Version 2.0
+(http://www.apache.org/licenses/LICENSE-2.0).
+
+This bundled file is provided for the sample app in this workspace
+template. It is licensed separately from nonoha-engine (which is
+AGPL-3.0-only / commercial); the Apache-2.0 terms above apply to this
+file only.

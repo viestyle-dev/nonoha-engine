@@ -1,0 +1,30 @@
+{
+  "properties": {},
+  "nodes": {
+    "Add_1": {
+      "type": "Add",
+      "properties": {},
+      "inputs": {},
+      "property_groups": []
+    },
+    "Multiply_1": {
+      "type": "Multiply",
+      "properties": {},
+      "inputs": {},
+      "property_groups": []
+    }
+  },
+  "inputs": {
+    "in_a": { "types": ["f32"] },
+    "in_b": { "types": ["f32"] }
+  },
+  "outputs": {
+    "out": { "types": ["f32"] }
+  },
+  "edges": [
+    { "source": ".in_a", "target": "Add_1.values" },
+    { "source": ".in_b", "target": "Add_1.values" },
+    { "source": "Add_1.value", "target": "Multiply_1.values" },
+    { "source": "Multiply_1.value", "target": ".out" }
+  ]
+}

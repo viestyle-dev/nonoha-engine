@@ -1,0 +1,359 @@
+{
+  "properties": {},
+  "nodes": {
+    "GraphLoaded_1": {
+      "type": "GraphLoaded",
+      "properties": {},
+      "inputs": {}
+    },
+    "ValueCounter_2": {
+      "type": "ValueCounter",
+      "properties": {
+        "reset_on_input": false
+      },
+      "inputs": {
+        "value": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        },
+        "reset": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        }
+      }
+    },
+    "ValuesLatch_3": {
+      "type": "ValuesLatch",
+      "properties": {
+        "value_type_list": "f32",
+        "dispatch_if_input": true
+      },
+      "inputs": {
+        "values": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        },
+        "dispatch": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        }
+      }
+    },
+    "PortValuesSend_4": {
+      "type": "PortValuesSend",
+      "properties": {
+        "url": "",
+        "target_port": "input_1",
+        "auto_reconnect": true,
+        "reconnect_interval": 5.0,
+        "value_types": "f32,f32"
+      },
+      "inputs": {
+        "values": {
+          "values": [
+            {
+              "dispatch_flag": false
+            },
+            {
+              "dispatch_flag": true
+            }
+          ]
+        }
+      }
+    },
+    "Clock_5": {
+      "type": "Clock",
+      "properties": {
+        "fs": 600,
+        "pack_size": 20
+      },
+      "inputs": {
+        "enabled": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        },
+        "reset": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        },
+        "properties": {
+          "values": [
+            {
+              "dispatch_flag": false
+            },
+            {
+              "dispatch_flag": false
+            }
+          ]
+        }
+      }
+    },
+    "WaveGenerator_7": {
+      "type": "WaveGenerator",
+      "properties": {
+        "frequency": 1.0,
+        "amplitude": 1.0,
+        "offset": 0.0
+      },
+      "inputs": {
+        "times": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        },
+        "modulation": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        }
+      }
+    },
+    "ValuesLatch_8": {
+      "type": "ValuesLatch",
+      "properties": {
+        "value_type_list": "f32,f32",
+        "dispatch_if_input": true
+      },
+      "inputs": {
+        "values": {
+          "values": [
+            {
+              "dispatch_flag": false
+            },
+            {
+              "dispatch_flag": false
+            }
+          ]
+        },
+        "dispatch": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        }
+      }
+    },
+    "Negative_9": {
+      "type": "Negative",
+      "properties": {
+        "in_types": "f32"
+      },
+      "inputs": {
+        "values": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        }
+      }
+    },
+    "Sequence_10": {
+      "type": "Sequence",
+      "properties": {
+        "count": 2,
+        "value_type_list": "f32"
+      },
+      "inputs": {
+        "in": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        }
+      }
+    },
+    "Compose_11": {
+      "type": "Compose",
+      "properties": {
+        "in_types": "f32,f32",
+        "inputs_to_dispatch": "1"
+      },
+      "inputs": {
+        "dispatch": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        },
+        "in_0": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        },
+        "in_1": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        }
+      }
+    }
+  },
+  "inputs": {
+    "test_f32": {
+      "values": [
+        {
+          "type": "f32"
+        }
+      ]
+    },
+    "input_echo": {
+      "values": [
+        {
+          "type": "f32"
+        },
+        {
+          "type": "f32"
+        }
+      ]
+    },
+    "test_bool": {
+      "values": [
+        {
+          "type": "bool"
+        }
+      ]
+    }
+  },
+  "outputs": {
+    "test_i32": {
+      "values": [
+        {
+          "type": "i32"
+        }
+      ]
+    },
+    "test_f32": {
+      "values": [
+        {
+          "type": "f32"
+        }
+      ]
+    },
+    "test_i32_1": {
+      "values": [
+        {
+          "type": "i32"
+        }
+      ]
+    },
+    "test_f32_1": {
+      "values": [
+        {
+          "type": "f32"
+        }
+      ]
+    },
+    "test_f32x2": {
+      "values": [
+        {
+          "type": "f32"
+        },
+        {
+          "type": "f32"
+        }
+      ]
+    },
+    "test_f32x2_1": {
+      "values": [
+        {
+          "type": "f32"
+        },
+        {
+          "type": "f32"
+        }
+      ]
+    }
+  },
+  "edges": [
+    {
+      "source": "GraphLoaded_1.loaded",
+      "target": "ValueCounter_2.value"
+    },
+    {
+      "source": "ValueCounter_2.count",
+      "target": ".test_i32"
+    },
+    {
+      "source": ".test_f32",
+      "target": "ValuesLatch_3.values"
+    },
+    {
+      "source": "ValuesLatch_3.values",
+      "target": ".test_f32"
+    },
+    {
+      "source": "PortValuesSend_4.status",
+      "target": ".test_i32_1"
+    },
+    {
+      "source": "Clock_5.times",
+      "target": "WaveGenerator_7.times"
+    },
+    {
+      "source": "WaveGenerator_7.series",
+      "target": "Sequence_10.in"
+    },
+    {
+      "source": "Sequence_10.out_1",
+      "target": "Negative_9.values"
+    },
+    {
+      "source": "Sequence_10.out_0",
+      "target": "Compose_11.in_0"
+    },
+    {
+      "source": "Negative_9.values",
+      "target": "Compose_11.in_1"
+    },
+    {
+      "source": "Compose_11.out",
+      "target": "PortValuesSend_4.values"
+    },
+    {
+      "source": "Compose_11.out",
+      "target": ".test_f32x2"
+    },
+    {
+      "source": ".input_echo",
+      "target": "ValuesLatch_8.values"
+    },
+    {
+      "source": "ValuesLatch_8.values",
+      "target": ".test_f32x2_1"
+    },
+    {
+      "source": ".test_bool",
+      "target": "Clock_5.enabled"
+    }
+  ]
+}

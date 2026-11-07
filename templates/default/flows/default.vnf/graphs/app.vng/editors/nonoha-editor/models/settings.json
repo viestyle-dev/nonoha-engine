@@ -1,0 +1,142 @@
+{
+  "nodes": {
+    "Clock_1": {
+      "type": "BasicEngineNode",
+      "x": 180,
+      "y": 240
+    },
+    "Synthesizer_1": {
+      "type": "BasicEngineNode",
+      "x": 480,
+      "y": 340
+    },
+    "EmaFilter_1": {
+      "type": "BasicEngineNode",
+      "x": 700,
+      "y": 420
+    },
+    "SpectrumAnalyzer_1": {
+      "type": "BasicEngineNode",
+      "x": 700,
+      "y": 520
+    },
+    "$input:enabled": {
+      "type": "BasicPortNode",
+      "x": 60,
+      "y": 220
+    },
+    "$input:frequency": {
+      "type": "BasicPortNode",
+      "x": 200,
+      "y": 440
+    },
+    "$input:harmonics": {
+      "type": "BasicPortNode",
+      "x": 200,
+      "y": 520
+    },
+    "$input:waveform_type": {
+      "type": "BasicPortNode",
+      "x": 200,
+      "y": 600
+    },
+    "$output:waveform": {
+      "type": "BasicPortNode",
+      "x": 1000,
+      "y": 180
+    },
+    "$output:smoothed": {
+      "type": "BasicPortNode",
+      "x": 1000,
+      "y": 300
+    },
+    "$output:spectrum": {
+      "type": "BasicPortNode",
+      "x": 1000,
+      "y": 500
+    },
+    "$output:bands": {
+      "type": "BasicPortNode",
+      "x": 1000,
+      "y": 600
+    },
+    "$graph": {
+      "width": 2560,
+      "height": 1320
+    },
+    "$editor:FastTimeSeriesGraphNode_mn7le8sfj0aid8": {
+      "type": "FastTimeSeriesGraphNode",
+      "x": 1780,
+      "y": 140,
+      "data": {
+        "xLength": 1500,
+        "graphWidth": 480,
+        "graphHeight": 320,
+        "yMin": -1.1,
+        "yMax": 1.1
+      }
+    },
+    "$editor:FastTimeSeriesGraphNode_mn7le8sffo0sig": {
+      "type": "FastTimeSeriesGraphNode",
+      "x": 1240,
+      "y": 140,
+      "data": {
+        "xLength": 1500,
+        "graphWidth": 480,
+        "graphHeight": 320,
+        "yMin": -1.1,
+        "yMax": 1.1
+      }
+    },
+    "$editor:FastTimeSeriesGraphNode_mn7le8sfvpm0j3": {
+      "type": "FastTimeSeriesGraphNode",
+      "x": 1780,
+      "y": 720,
+      "data": {
+        "xLength": 1500,
+        "graphWidth": 480,
+        "graphHeight": 320,
+        "yMin": 0,
+        "yMax": 1.1
+      }
+    },
+    "$editor:FastTimeSeriesGraphNode_mn7le8sfr42ssr": {
+      "type": "FastTimeSeriesGraphNode",
+      "x": 1240,
+      "y": 720,
+      "data": {
+        "xLength": 1500,
+        "graphWidth": 480,
+        "graphHeight": 320,
+        "yMin": 0,
+        "yMax": 1.1
+      }
+    }
+  },
+  "editor_edges": {
+    "$output:smoothed-$editor:FastTimeSeriesGraphNode_mn7le8sfj0aid8:series": {
+      "source": "$output:smoothed",
+      "sourceHandle": null,
+      "target": "$editor:FastTimeSeriesGraphNode_mn7le8sfj0aid8",
+      "targetHandle": "series"
+    },
+    "$output:waveform-$editor:FastTimeSeriesGraphNode_mn7le8sffo0sig:series": {
+      "source": "$output:waveform",
+      "sourceHandle": null,
+      "target": "$editor:FastTimeSeriesGraphNode_mn7le8sffo0sig",
+      "targetHandle": "series"
+    },
+    "$output:spectrum-$editor:FastTimeSeriesGraphNode_mn7le8sfr42ssr:series": {
+      "source": "$output:spectrum",
+      "sourceHandle": null,
+      "target": "$editor:FastTimeSeriesGraphNode_mn7le8sfr42ssr",
+      "targetHandle": "series"
+    },
+    "$output:bands-$editor:FastTimeSeriesGraphNode_mn7le8sfvpm0j3:series": {
+      "source": "$output:bands",
+      "sourceHandle": null,
+      "target": "$editor:FastTimeSeriesGraphNode_mn7le8sfvpm0j3",
+      "targetHandle": "series"
+    }
+  }
+}

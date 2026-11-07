@@ -1,0 +1,200 @@
+{
+  "nodes": {
+    "GraphLoaded_1": {
+      "type": "BasicEngineNode",
+      "x": 100,
+      "y": 140
+    },
+    "ValueCounter_2": {
+      "type": "BasicEngineNode",
+      "x": 280,
+      "y": 140
+    },
+    "$output:test_i32": {
+      "type": "BasicPortNode",
+      "x": 460,
+      "y": 100
+    },
+    "$editor:ValuesListDisplayNode": {
+      "type": "ValuesListDisplayNode",
+      "x": 580,
+      "y": 120
+    },
+    "$graph": {
+      "width": 1860,
+      "height": 1540
+    },
+    "$input:test_f32": {
+      "type": "BasicPortNode",
+      "x": 300,
+      "y": 320
+    },
+    "$editor:ValuesInputNode": {
+      "type": "ValuesInputNode",
+      "x": 60,
+      "y": 280,
+      "data": {
+        "inputValuesText": "{\n  \"type\": \"f32\",\n  \"shape\": [10],\n  \"values\": [0,1,2,3,4,5,6,7,8,9]\n}"
+      }
+    },
+    "ValuesLatch_3": {
+      "type": "BasicEngineNode",
+      "x": 440,
+      "y": 320
+    },
+    "$output:test_f32": {
+      "type": "BasicPortNode",
+      "x": 700,
+      "y": 340
+    },
+    "$editor:ValuesListDisplayNode_1": {
+      "type": "ValuesListDisplayNode",
+      "x": 840,
+      "y": 360
+    },
+    "PortValuesSend_4": {
+      "type": "BasicEngineNode",
+      "x": 1080,
+      "y": 660
+    },
+    "$output:test_i32_1": {
+      "type": "BasicPortNode",
+      "x": 1300,
+      "y": 660
+    },
+    "$editor:LabeledNumberDisplayNode": {
+      "type": "LabeledNumberDisplayNode",
+      "x": 1420,
+      "y": 660,
+      "data": {
+        "mapper": "{\n\"0\": \"DISCONNECTED\",\n\"1\": \"CONNECTED\",\n\"2\": \"CONNECTED\"\n}"
+      }
+    },
+    "Clock_5": {
+      "type": "BasicEngineNode",
+      "x": 180,
+      "y": 620
+    },
+    "WaveGenerator_7": {
+      "type": "BasicEngineNode",
+      "x": 400,
+      "y": 620
+    },
+    "ValuesLatch_8": {
+      "x": 400,
+      "y": 1040
+    },
+    "$output:test_f32_1": {
+      "type": "BasicPortNode",
+      "x": 900,
+      "y": 80
+    },
+    "$editor:TimeSeriesGraphNode_1": {
+      "type": "TimeSeriesGraphNode",
+      "x": 760,
+      "y": 1020
+    },
+    "Negative_9": {
+      "type": "BasicEngineNode",
+      "x": 600,
+      "y": 740
+    },
+    "Sequence_10": {
+      "type": "BasicEngineNodeCompact",
+      "x": 600,
+      "y": 620
+    },
+    "$output:test_f32x2": {
+      "type": "BasicPortNode",
+      "x": 1080,
+      "y": 480
+    },
+    "Compose_11": {
+      "type": "BasicEngineNodeCompact",
+      "x": 820,
+      "y": 600
+    },
+    "$editor:TimeSeriesGraphNode": {
+      "type": "TimeSeriesGraphNode",
+      "x": 1240,
+      "y": 100
+    },
+    "$input:input_echo": {
+      "type": "BasicPortNode",
+      "x": 280,
+      "y": 1040
+    },
+    "$output:test_f32x2_1": {
+      "type": "BasicPortNode",
+      "x": 620,
+      "y": 1040
+    },
+    "$input:test_bool": {
+      "type": "BasicPortNode",
+      "x": 40,
+      "y": 640
+    },
+    "$editor:TriggerNode": {
+      "type": "TriggerNode",
+      "x": -160,
+      "y": 640,
+      "data": {
+        "boolValue": false
+      }
+    },
+    "$editor:CommentNode": {
+      "type": "CommentNode",
+      "x": 1100,
+      "y": 820,
+      "data": {
+        "comment": "ws://127.0.0.1:8001/node-flow/graphs/sample_graph/endpoint/ws"
+      },
+      "width": 511,
+      "height": 50
+    }
+  },
+  "editor_edges": {
+    "$output:test_i32-$editor:ValuesListDisplayNode:values": {
+      "source": "$output:test_i32",
+      "sourceHandle": null,
+      "target": "$editor:ValuesListDisplayNode",
+      "targetHandle": "values"
+    },
+    "$editor:ValuesInputNode:values-$input:test_f32": {
+      "source": "$editor:ValuesInputNode",
+      "sourceHandle": "values",
+      "target": "$input:test_f32",
+      "targetHandle": null
+    },
+    "$output:test_f32-$editor:ValuesListDisplayNode_1:values": {
+      "source": "$output:test_f32",
+      "sourceHandle": null,
+      "target": "$editor:ValuesListDisplayNode_1",
+      "targetHandle": "values"
+    },
+    "$output:test_i32_1-$editor:LabeledNumberDisplayNode:values": {
+      "source": "$output:test_i32_1",
+      "sourceHandle": null,
+      "target": "$editor:LabeledNumberDisplayNode",
+      "targetHandle": "values"
+    },
+    "$output:test_f32x2-$editor:TimeSeriesGraphNode:series": {
+      "source": "$output:test_f32x2",
+      "sourceHandle": null,
+      "target": "$editor:TimeSeriesGraphNode",
+      "targetHandle": "series"
+    },
+    "$output:test_f32x2_1-$editor:TimeSeriesGraphNode_1:series": {
+      "source": "$output:test_f32x2_1",
+      "sourceHandle": null,
+      "target": "$editor:TimeSeriesGraphNode_1",
+      "targetHandle": "series"
+    },
+    "$editor:TriggerNode:trigger-$input:test_bool": {
+      "source": "$editor:TriggerNode",
+      "sourceHandle": "trigger",
+      "target": "$input:test_bool",
+      "targetHandle": null
+    }
+  }
+}

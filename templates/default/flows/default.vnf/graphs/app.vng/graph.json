@@ -1,0 +1,145 @@
+{
+  "properties": {},
+  "nodes": {
+    "Clock_1": {
+      "type": "Clock",
+      "properties": {
+        "fs": 600.0,
+        "pack_size": 20
+      },
+      "inputs": {
+        "enabled": {
+          "dispatch_flags": [
+            false
+          ]
+        },
+        "reset": {
+          "dispatch_flags": [
+            false
+          ]
+        },
+        "properties": {
+          "dispatch_flags": [
+            false,
+            false
+          ]
+        }
+      }
+    },
+    "Synthesizer_1": {
+      "type": "Synthesizer",
+      "properties": {
+        "frequency": 440.0,
+        "harmonics": 4,
+        "waveform_type": 0
+      }
+    },
+    "EmaFilter_1": {
+      "type": "EmaFilter",
+      "properties": {
+        "in_type": "f32",
+        "alpha": 0.3
+      }
+    },
+    "SpectrumAnalyzer_1": {
+      "type": "SpectrumAnalyzer",
+      "properties": {
+        "fft_size": 256,
+        "bass_cutoff": 0.15,
+        "mid_cutoff": 0.5
+      }
+    }
+  },
+  "inputs": {
+    "enabled": {
+      "types": [
+        "bool"
+      ]
+    },
+    "frequency": {
+      "types": [
+        "f32"
+      ]
+    },
+    "harmonics": {
+      "types": [
+        "f32"
+      ]
+    },
+    "waveform_type": {
+      "types": [
+        "f32"
+      ]
+    }
+  },
+  "outputs": {
+    "waveform": {
+      "types": [
+        "f32"
+      ]
+    },
+    "smoothed": {
+      "types": [
+        "f32"
+      ]
+    },
+    "spectrum": {
+      "types": [
+        "f32"
+      ]
+    },
+    "bands": {
+      "types": [
+        "f32",
+        "f32",
+        "f32"
+      ]
+    }
+  },
+  "edges": [
+    {
+      "source": ".enabled",
+      "target": "Clock_1.enabled"
+    },
+    {
+      "source": "Clock_1.times",
+      "target": "Synthesizer_1.time"
+    },
+    {
+      "source": ".frequency",
+      "target": "Synthesizer_1.frequency"
+    },
+    {
+      "source": ".harmonics",
+      "target": "Synthesizer_1.harmonics"
+    },
+    {
+      "source": ".waveform_type",
+      "target": "Synthesizer_1.waveform_type"
+    },
+    {
+      "source": "Synthesizer_1.waveform",
+      "target": ".waveform"
+    },
+    {
+      "source": "Synthesizer_1.waveform",
+      "target": "EmaFilter_1.series"
+    },
+    {
+      "source": "EmaFilter_1.series",
+      "target": ".smoothed"
+    },
+    {
+      "source": "Synthesizer_1.waveform",
+      "target": "SpectrumAnalyzer_1.signal"
+    },
+    {
+      "source": "SpectrumAnalyzer_1.spectrum",
+      "target": ".spectrum"
+    },
+    {
+      "source": "SpectrumAnalyzer_1.bands",
+      "target": ".bands"
+    }
+  ]
+}

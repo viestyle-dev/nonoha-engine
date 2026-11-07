@@ -1,0 +1,103 @@
+{
+  "nodes": {
+    "$input:input": {
+      "type": "BasicPortNode",
+      "x": 140,
+      "y": 200
+    },
+    "ValuesLatch_1": {
+      "type": "BasicEngineNode",
+      "x": 300,
+      "y": 180
+    },
+    "$output:test_f32": {
+      "type": "BasicPortNode",
+      "x": 560,
+      "y": 200
+    },
+    "$editor:ValuesListDisplayNode": {
+      "type": "ValuesListDisplayNode",
+      "x": 780,
+      "y": 220
+    },
+    "$graph": {
+      "width": 1600,
+      "height": 1320
+    },
+    "ValuesLatch_2": {
+      "x": 300,
+      "y": 600
+    },
+    "$output:test_f32_1": {
+      "type": "BasicPortNode",
+      "x": 1060,
+      "y": 100
+    },
+    "$editor:TimeSeriesGraphNode": {
+      "type": "TimeSeriesGraphNode",
+      "x": 800,
+      "y": 520
+    },
+    "PortValuesSend_3": {
+      "type": "BasicEngineNode",
+      "x": 500,
+      "y": 1080
+    },
+    "$output:test_i32": {
+      "type": "BasicPortNode",
+      "x": 700,
+      "y": 1120
+    },
+    "$editor:LabeledNumberDisplayNode_mf9fl34npfq5pm84obk": {
+      "type": "LabeledNumberDisplayNode",
+      "x": 840,
+      "y": 1060,
+      "data": {
+        "mapper": "{\n\"0\": \"DISCONNECTED\",\n\"1\": \"CONNECTED\",\n\"2\": \"CONNECTED\"\n}"
+      },
+      "width": 241,
+      "height": 317
+    },
+    "$output:test_f32x2": {
+      "type": "BasicPortNode",
+      "x": 640,
+      "y": 720
+    },
+    "$input:test_f32x2": {
+      "type": "BasicPortNode",
+      "x": 320,
+      "y": 480
+    },
+    "$input:input_1": {
+      "type": "BasicPortNode",
+      "x": 160,
+      "y": 580
+    }
+  },
+  "editor_edges": {
+    "$output:test_f32-$editor:ValuesListDisplayNode:values": {
+      "source": "$output:test_f32",
+      "sourceHandle": null,
+      "target": "$editor:ValuesListDisplayNode",
+      "targetHandle": "values"
+    },
+    "$output:test_f32_1-$editor:TimeSeriesGraphNode:series": {
+      "source": "$output:test_f32_1",
+      "sourceHandle": null,
+      "target": "$editor:TimeSeriesGraphNode",
+      "targetHandle": "series"
+    },
+    "$output:test_i32-$editor:LabeledNumberDisplayNode_mf9fl34npfq5pm84obk:values": {
+      "source": "$output:test_i32",
+      "sourceHandle": null,
+      "target": "$editor:LabeledNumberDisplayNode_mf9fl34npfq5pm84obk",
+      "targetHandle": "values"
+    },
+    "$output:test_f32x2-$editor:TimeSeriesGraphNode_2:series": {
+      "source": "$output:test_f32x2",
+      "sourceHandle": null,
+      "target": "$editor:TimeSeriesGraphNode_2",
+      "targetHandle": "series"
+    }
+  }
+}

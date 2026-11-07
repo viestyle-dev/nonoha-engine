@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>nonoha Signal Lab</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace; background: #0a0a1a; color: #c0c0d0; min-height: 100vh; padding: 16px; }
+    h1 { font-size: 1.1rem; color: #6080ff; margin-bottom: 12px; letter-spacing: 1px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-width: 900px; margin: 0 auto; }
+    .panel { background: #101020; border: 1px solid #1a1a3a; border-radius: 8px; padding: 12px; }
+    .panel-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 2px; color: #4060a0; margin-bottom: 8px; }
+    canvas { width: 100%; height: 160px; display: block; border-radius: 4px; background: #080810; }
+    .bands { display: flex; gap: 8px; align-items: flex-end; height: 80px; justify-content: center; }
+    .band { width: 48px; border-radius: 4px 4px 0 0; transition: height 0.08s ease; min-height: 4px; text-align: center; }
+    .band-label { font-size: 0.6rem; color: #606080; margin-top: 4px; }
+    .band.bass { background: linear-gradient(to top, #ff4060, #ff6080); }
+    .band.mid { background: linear-gradient(to top, #40ff80, #60ffa0); }
+    .band.high { background: linear-gradient(to top, #4080ff, #60a0ff); }
+    .controls { grid-column: 1 / -1; }
+    .control-row { display: flex; gap: 16px; align-items: center; margin-bottom: 8px; }
+    .control-row label { font-size: 0.75rem; color: #8080a0; min-width: 80px; }
+    .control-row input[type=range] { flex: 1; accent-color: #6080ff; height: 4px; }
+    .control-row .value { font-size: 0.75rem; color: #a0a0c0; min-width: 60px; text-align: right; font-variant-numeric: tabular-nums; }
+    .wave-btns { display: flex; gap: 4px; flex: 1; }
+    .wave-btn { padding: 4px 12px; font-size: 0.7rem; border: 1px solid #2a2a4a; border-radius: 4px; background: #141428; color: #8080a0; cursor: pointer; font-family: inherit; }
+    .wave-btn.active { background: #2040a0; color: #c0d0ff; border-color: #4060c0; }
+    .status { font-size: 0.65rem; color: #404060; text-align: center; margin-top: 8px; }
+    .status.connected { color: #40a060; }
+  </style>
+</head>
+<body>
+  <h1>nonoha Signal Lab</h1>
+  <div class="grid">
+    <div class="panel">
+      <div class="panel-title">Waveform</div>
+      <canvas id="waveCanvas"></canvas>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Spectrum</div>
+      <canvas id="specCanvas"></canvas>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Band Energy</div>
+      <div class="bands">
+        <div>
+          <div class="band bass" id="bandBass" style="height:4px"></div>
+          <div class="band-label">Bass</div>
+        </div>
+        <div>
+          <div class="band mid" id="bandMid" style="height:4px"></div>
+          <div class="band-label">Mid</div>
+        </div>
+        <div>
+          <div class="band high" id="bandHigh" style="height:4px"></div>
+          <div class="band-label">High</div>
+        </div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Smoothed (EMA)</div>
+      <canvas id="smoothCanvas"></canvas>
+    </div>
+    <div class="panel controls">
+      <div class="panel-title">Controls</div>
+      <div class="control-row">
+        <label>Frequency</label>
+        <input type="range" id="freqSlider" min="20" max="2000" step="1" value="440">
+        <span class="value" id="freqValue">440 Hz</span>
+      </div>
+      <div class="control-row">
+        <label>Harmonics</label>
+        <input type="range" id="harmSlider" min="1" max="8" step="1" value="4">
+        <span class="value" id="harmValue">4</span>
+      </div>
+      <div class="control-row">
+        <label>Waveform</label>
+        <div class="wave-btns">
+          <button class="wave-btn active" data-type="0">Sine</button>
+          <button class="wave-btn" data-type="1">Square</button>
+          <button class="wave-btn" data-type="2">Saw</button>
+          <button class="wave-btn" data-type="3">Triangle</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="status" id="status">Connecting...</div>
+
+  <script src="nonoha-client.iife.js"></script>
+  <script>
+    const host = window.location.hostname || 'localhost';
+    const port = window.location.port || '8000';
+    const client = new NonohaClient.GraphClient(`${host}:${port}`, 'app');
+
+    // Canvas setup
+    function setupCanvas(id) {
+      const c = document.getElementById(id);
+      const dpr = window.devicePixelRatio || 1;
+      const rect = c.getBoundingClientRect();
+      c.width = rect.width * dpr;
+      c.height = rect.height * dpr;
+      const ctx = c.getContext('2d');
+      ctx.scale(dpr, dpr);
+      return { canvas: c, ctx, w: rect.width, h: rect.height };
+    }
+
+    let wave, spec, smooth;
+    function initCanvases() {
+      wave = setupCanvas('waveCanvas');
+      spec = setupCanvas('specCanvas');
+      smooth = setupCanvas('smoothCanvas');
+    }
+    initCanvases();
+    window.addEventListener('resize', initCanvases);
+
+    // Drawing functions
+    function drawWaveform(cv, data, color) {
+      const { ctx, w, h } = cv;
+      ctx.fillStyle = '#080810';
+      ctx.fillRect(0, 0, w, h);
+      // Grid lines
+      ctx.strokeStyle = '#151530';
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2);
+      ctx.stroke();
+      // Waveform
+      if (!data || data.length === 0) return;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      for (let i = 0; i < data.length; i++) {
+        const x = (i / data.length) * w;
+        const y = h / 2 - data[i] * (h * 0.45);
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+
+    function drawSpectrum(cv, data) {
+      const { ctx, w, h } = cv;
+      ctx.fillStyle = '#080810';
+      ctx.fillRect(0, 0, w, h);
+      if (!data || data.length === 0) return;
+      const barW = Math.max(1, w / data.length);
+      for (let i = 0; i < data.length; i++) {
+        const v = data[i];
+        const barH = v * h;
+        const hue = 220 + (i / data.length) * 120;
+        ctx.fillStyle = `hsla(${hue}, 70%, ${40 + v * 30}%, 0.9)`;
+        ctx.fillRect(i * barW, h - barH, barW - 0.5, barH);
+      }
+    }
+
+    // Waveform ring buffer for display
+    const DISPLAY_SIZE = 512;
+    let waveBuffer = new Float32Array(DISPLAY_SIZE);
+    let wavePos = 0;
+    let smoothBuffer = new Float32Array(DISPLAY_SIZE);
+    let smoothPos = 0;
+
+    // Handle data from graph
+    client.addOutputCallback((data) => {
+      if (data.portName === 'waveform' && data.values.length > 0) {
+        const arr = data.values[0].array;
+        for (let i = 0; i < arr.length; i++) {
+          waveBuffer[wavePos % DISPLAY_SIZE] = arr[i];
+          wavePos++;
+        }
+        drawWaveform(wave, waveBuffer, '#40ff80');
+      }
+      if (data.portName === 'smoothed' && data.values.length > 0) {
+        const arr = data.values[0].array;
+        for (let i = 0; i < arr.length; i++) {
+          smoothBuffer[smoothPos % DISPLAY_SIZE] = arr[i];
+          smoothPos++;
+        }
+        drawWaveform(smooth, smoothBuffer, '#ff8040');
+      }
+      if (data.portName === 'spectrum' && data.values.length > 0) {
+        drawSpectrum(spec, data.values[0].array);
+      }
+      if (data.portName === 'bands' && data.values.length >= 3) {
+        const bass = data.values[0].array[0];
+        const mid = data.values[1].array[0];
+        const high = data.values[2].array[0];
+        document.getElementById('bandBass').style.height = Math.max(4, bass * 76) + 'px';
+        document.getElementById('bandMid').style.height = Math.max(4, mid * 76) + 'px';
+        document.getElementById('bandHigh').style.height = Math.max(4, high * 76) + 'px';
+      }
+    });
+
+    client.addClosedCallback(() => {
+      document.getElementById('status').textContent = 'Disconnected';
+      document.getElementById('status').className = 'status';
+    });
+
+    client.connect();
+
+    // Enable Clock node to start the data pipeline.
+    // WebSocket needs time to complete handshake after connect(),
+    // so we retry until the send succeeds.
+    function enableClock() {
+      try {
+        client.dispatchInput({
+          portName: 'enabled',
+          values: [{ dataType: NonohaClient.PortDataType.Bool, shape: [1], array: new Uint8Array([1]) }]
+        });
+        document.getElementById('status').textContent = 'Connected';
+        document.getElementById('status').className = 'status connected';
+      } catch (e) {
+        // Socket not ready yet — retry
+        setTimeout(enableClock, 200);
+      }
+    }
+    setTimeout(enableClock, 500);
+
+    // Controls
+    const F32 = NonohaClient.PortDataType.Float32;
+    function sendFloat(portName, value) {
+      client.dispatchInput({
+        portName,
+        values: [{ dataType: F32, shape: [1], array: new Float32Array([value]) }]
+      });
+    }
+
+    const freqSlider = document.getElementById('freqSlider');
+    const harmSlider = document.getElementById('harmSlider');
+
+    freqSlider.addEventListener('input', () => {
+      const v = parseFloat(freqSlider.value);
+      document.getElementById('freqValue').textContent = v + ' Hz';
+      sendFloat('frequency', v);
+    });
+
+    harmSlider.addEventListener('input', () => {
+      const v = parseInt(harmSlider.value);
+      document.getElementById('harmValue').textContent = v;
+      sendFloat('harmonics', v);
+    });
+
+    let activeWaveType = 0;
+    document.querySelectorAll('.wave-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.wave-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        activeWaveType = parseInt(btn.dataset.type);
+        sendFloat('waveform_type', activeWaveType);
+      });
+    });
+  </script>
+</body>
+</html>

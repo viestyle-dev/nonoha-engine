@@ -1,0 +1,494 @@
+{
+  "nodes": {
+    "$graph": {
+      "width": 2900,
+      "height": 3840
+    },
+    "Clock_1": {
+      "type": "BasicEngineNode",
+      "x": 280,
+      "y": 180
+    },
+    "RealNumberValue_2": {
+      "type": "BasicValueNode",
+      "x": 80,
+      "y": 180
+    },
+    "WaveGenerator_3": {
+      "type": "BasicEngineNode",
+      "x": 520,
+      "y": 180
+    },
+    "$output:test_f32": {
+      "type": "BasicPortNode",
+      "x": 1500,
+      "y": 180
+    },
+    "$editor:TimeSeriesGraphNode": {
+      "type": "TimeSeriesGraphNode",
+      "x": 1660,
+      "y": 180
+    },
+    "ValuesLatch_4": {
+      "type": "BasicEngineNode",
+      "x": 220,
+      "y": 480
+    },
+    "ValuesLatch_6": {
+      "x": 440,
+      "y": 480
+    },
+    "ValuesLatch_7": {
+      "x": 660,
+      "y": 480
+    },
+    "ValuesLatch_8": {
+      "x": 880,
+      "y": 480
+    },
+    "ValuesLatch_9": {
+      "x": 1100,
+      "y": 480
+    },
+    "ValuesLatch_10": {
+      "x": 220,
+      "y": 620
+    },
+    "ValuesLatch_11": {
+      "x": 440,
+      "y": 620
+    },
+    "ValuesLatch_12": {
+      "x": 660,
+      "y": 620
+    },
+    "ValuesLatch_13": {
+      "x": 880,
+      "y": 620
+    },
+    "ValuesLatch_14": {
+      "x": 1100,
+      "y": 620
+    },
+    "ValuesLatch_15": {
+      "x": 220,
+      "y": 800
+    },
+    "ValuesLatch_16": {
+      "x": 440,
+      "y": 800
+    },
+    "ValuesLatch_17": {
+      "x": 660,
+      "y": 800
+    },
+    "ValuesLatch_18": {
+      "x": 880,
+      "y": 800
+    },
+    "ValuesLatch_19": {
+      "x": 1100,
+      "y": 800
+    },
+    "ValuesLatch_20": {
+      "x": 220,
+      "y": 940
+    },
+    "ValuesLatch_21": {
+      "x": 440,
+      "y": 940
+    },
+    "ValuesLatch_22": {
+      "x": 660,
+      "y": 940
+    },
+    "ValuesLatch_23": {
+      "x": 880,
+      "y": 940
+    },
+    "ValuesLatch_24": {
+      "x": 1100,
+      "y": 940
+    },
+    "ValuesLatch_25": {
+      "x": 220,
+      "y": 1120
+    },
+    "ValuesLatch_26": {
+      "x": 440,
+      "y": 1120
+    },
+    "ValuesLatch_27": {
+      "x": 660,
+      "y": 1120
+    },
+    "ValuesLatch_28": {
+      "x": 880,
+      "y": 1120
+    },
+    "ValuesLatch_29": {
+      "x": 1100,
+      "y": 1120
+    },
+    "ValuesLatch_30": {
+      "x": 220,
+      "y": 1260
+    },
+    "ValuesLatch_31": {
+      "x": 440,
+      "y": 1260
+    },
+    "ValuesLatch_32": {
+      "x": 660,
+      "y": 1260
+    },
+    "ValuesLatch_33": {
+      "x": 880,
+      "y": 1260
+    },
+    "ValuesLatch_34": {
+      "x": 1100,
+      "y": 1260
+    },
+    "ValuesLatch_35": {
+      "x": 220,
+      "y": 1440
+    },
+    "ValuesLatch_36": {
+      "x": 440,
+      "y": 1440
+    },
+    "ValuesLatch_37": {
+      "x": 660,
+      "y": 1440
+    },
+    "ValuesLatch_38": {
+      "x": 880,
+      "y": 1440
+    },
+    "ValuesLatch_39": {
+      "x": 1100,
+      "y": 1440
+    },
+    "ValuesLatch_40": {
+      "x": 220,
+      "y": 1580
+    },
+    "ValuesLatch_41": {
+      "x": 440,
+      "y": 1580
+    },
+    "ValuesLatch_42": {
+      "x": 660,
+      "y": 1580
+    },
+    "ValuesLatch_43": {
+      "x": 880,
+      "y": 1580
+    },
+    "ValuesLatch_44": {
+      "x": 1100,
+      "y": 1580
+    },
+    "ValuesLatch_45": {
+      "x": 220,
+      "y": 1760
+    },
+    "ValuesLatch_46": {
+      "x": 440,
+      "y": 1760
+    },
+    "ValuesLatch_47": {
+      "x": 660,
+      "y": 1760
+    },
+    "ValuesLatch_48": {
+      "x": 880,
+      "y": 1760
+    },
+    "ValuesLatch_49": {
+      "x": 1100,
+      "y": 1760
+    },
+    "ValuesLatch_50": {
+      "x": 220,
+      "y": 1900
+    },
+    "ValuesLatch_51": {
+      "x": 440,
+      "y": 1900
+    },
+    "ValuesLatch_52": {
+      "x": 660,
+      "y": 1900
+    },
+    "ValuesLatch_53": {
+      "x": 880,
+      "y": 1900
+    },
+    "ValuesLatch_54": {
+      "x": 1100,
+      "y": 1900
+    },
+    "Clock_55": {
+      "x": 200,
+      "y": 2140
+    },
+    "RealNumberValue_56": {
+      "x": 20,
+      "y": 2160
+    },
+    "WaveGenerator_57": {
+      "x": 440,
+      "y": 2140
+    },
+    "ValuesLatch_58": {
+      "type": "BasicEngineNode",
+      "x": 220,
+      "y": 2440
+    },
+    "ValuesLatch_60": {
+      "x": 640,
+      "y": 2440
+    },
+    "Decompose_61": {
+      "type": "BasicEngineNodeCompact",
+      "x": 480,
+      "y": 2460
+    },
+    "Decompose_62": {
+      "x": 900,
+      "y": 2460
+    },
+    "ValuesLatch_63": {
+      "x": 1060,
+      "y": 2440
+    },
+    "Decompose_64": {
+      "x": 1320,
+      "y": 2460
+    },
+    "ValuesLatch_65": {
+      "x": 1480,
+      "y": 2440
+    },
+    "Decompose_66": {
+      "x": 1740,
+      "y": 2460
+    },
+    "ValuesLatch_67": {
+      "x": 1900,
+      "y": 2440
+    },
+    "ValuesLatch_69": {
+      "x": 220,
+      "y": 2740
+    },
+    "Decompose_70": {
+      "x": 60,
+      "y": 2760
+    },
+    "Decompose_71": {
+      "x": 480,
+      "y": 2760
+    },
+    "ValuesLatch_72": {
+      "x": 640,
+      "y": 2740
+    },
+    "Decompose_73": {
+      "x": 900,
+      "y": 2760
+    },
+    "ValuesLatch_74": {
+      "x": 1060,
+      "y": 2740
+    },
+    "Decompose_75": {
+      "x": 1320,
+      "y": 2760
+    },
+    "ValuesLatch_76": {
+      "x": 1480,
+      "y": 2740
+    },
+    "Decompose_77": {
+      "x": 1740,
+      "y": 2760
+    },
+    "ValuesLatch_78": {
+      "x": 1900,
+      "y": 2740
+    },
+    "ValuesLatch_79": {
+      "x": 220,
+      "y": 3020
+    },
+    "Decompose_80": {
+      "x": 60,
+      "y": 3040
+    },
+    "Decompose_81": {
+      "x": 480,
+      "y": 3040
+    },
+    "ValuesLatch_82": {
+      "x": 640,
+      "y": 3020
+    },
+    "Decompose_83": {
+      "x": 900,
+      "y": 3040
+    },
+    "ValuesLatch_84": {
+      "x": 1060,
+      "y": 3020
+    },
+    "Decompose_85": {
+      "x": 1320,
+      "y": 3040
+    },
+    "ValuesLatch_86": {
+      "x": 1480,
+      "y": 3020
+    },
+    "Decompose_87": {
+      "x": 1740,
+      "y": 3040
+    },
+    "ValuesLatch_88": {
+      "x": 1900,
+      "y": 3020
+    },
+    "ValuesLatch_89": {
+      "x": 220,
+      "y": 3320
+    },
+    "Decompose_90": {
+      "x": 60,
+      "y": 3340
+    },
+    "Decompose_91": {
+      "x": 480,
+      "y": 3340
+    },
+    "ValuesLatch_92": {
+      "x": 640,
+      "y": 3320
+    },
+    "Decompose_93": {
+      "x": 900,
+      "y": 3340
+    },
+    "ValuesLatch_94": {
+      "x": 1060,
+      "y": 3320
+    },
+    "Decompose_95": {
+      "x": 1320,
+      "y": 3340
+    },
+    "ValuesLatch_96": {
+      "x": 1480,
+      "y": 3320
+    },
+    "Decompose_97": {
+      "x": 1740,
+      "y": 3340
+    },
+    "ValuesLatch_98": {
+      "x": 1900,
+      "y": 3320
+    },
+    "ValuesLatch_99": {
+      "x": 240,
+      "y": 3620
+    },
+    "Decompose_100": {
+      "x": 80,
+      "y": 3640
+    },
+    "Decompose_101": {
+      "x": 500,
+      "y": 3640
+    },
+    "ValuesLatch_102": {
+      "x": 660,
+      "y": 3620
+    },
+    "Decompose_103": {
+      "x": 920,
+      "y": 3640
+    },
+    "ValuesLatch_104": {
+      "x": 1080,
+      "y": 3620
+    },
+    "Decompose_105": {
+      "x": 1340,
+      "y": 3640
+    },
+    "ValuesLatch_106": {
+      "x": 1500,
+      "y": 3620
+    },
+    "Decompose_107": {
+      "x": 1760,
+      "y": 3640
+    },
+    "ValuesLatch_108": {
+      "x": 1920,
+      "y": 3620
+    },
+    "$output:test_f32x2": {
+      "type": "BasicPortNode",
+      "x": 2200,
+      "y": 2160
+    },
+    "$editor:TimeSeriesGraphNode_1": {
+      "type": "TimeSeriesGraphNode",
+      "x": 2340,
+      "y": 2120
+    },
+    "Sequence_110": {
+      "type": "BasicEngineNodeCompact",
+      "x": 60,
+      "y": 2480
+    },
+    "ValueCounter_113": {
+      "type": "BasicEngineNode",
+      "x": 760,
+      "y": 2220
+    },
+    "$output:test_i32": {
+      "type": "BasicPortNode",
+      "x": 920,
+      "y": 2220
+    },
+    "$editor:ValuesListDisplayNode": {
+      "type": "ValuesListDisplayNode",
+      "x": 1040,
+      "y": 2200
+    }
+  },
+  "editor_edges": {
+    "$output:test_f32-$editor:TimeSeriesGraphNode:series": {
+      "source": "$output:test_f32",
+      "sourceHandle": null,
+      "target": "$editor:TimeSeriesGraphNode",
+      "targetHandle": "series"
+    },
+    "$output:test_f32x2-$editor:TimeSeriesGraphNode_1:series": {
+      "source": "$output:test_f32x2",
+      "sourceHandle": null,
+      "target": "$editor:TimeSeriesGraphNode_1",
+      "targetHandle": "series"
+    },
+    "$output:test_i32-$editor:ValuesListDisplayNode:values": {
+      "source": "$output:test_i32",
+      "sourceHandle": null,
+      "target": "$editor:ValuesListDisplayNode",
+      "targetHandle": "values"
+    }
+  }
+}

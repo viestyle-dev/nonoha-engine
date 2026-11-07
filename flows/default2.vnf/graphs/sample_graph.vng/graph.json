@@ -1,0 +1,164 @@
+{
+  "properties": {},
+  "nodes": {
+    "ValuesLatch_1": {
+      "type": "ValuesLatch",
+      "properties": {
+        "value_type_list": "f32",
+        "dispatch_if_input": true
+      },
+      "inputs": {
+        "values": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        },
+        "dispatch": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        }
+      }
+    },
+    "ValuesLatch_2": {
+      "type": "ValuesLatch",
+      "properties": {
+        "value_type_list": "f32,f32",
+        "dispatch_if_input": true
+      },
+      "inputs": {
+        "values": {
+          "values": [
+            {
+              "dispatch_flag": false
+            },
+            {
+              "dispatch_flag": false
+            }
+          ]
+        },
+        "dispatch": {
+          "values": [
+            {
+              "dispatch_flag": false
+            }
+          ]
+        }
+      }
+    },
+    "PortValuesSend_3": {
+      "type": "PortValuesSend",
+      "properties": {
+        "url": "ws://localhost:8000/node-flow/graphs/sample_graph/endpoint/ws",
+        "target_port": "input_echo",
+        "auto_reconnect": true,
+        "reconnect_interval": 5.0,
+        "value_types": "f32,f32"
+      },
+      "inputs": {
+        "values": {
+          "values": [
+            {
+              "dispatch_flag": false
+            },
+            {
+              "dispatch_flag": false
+            }
+          ]
+        }
+      }
+    }
+  },
+  "inputs": {
+    "input": {
+      "values": [
+        {
+          "type": "f32"
+        }
+      ]
+    },
+    "test_f32x2": {
+      "values": [
+        {
+          "type": "f32"
+        },
+        {
+          "type": "f32"
+        }
+      ]
+    },
+    "input_1": {
+      "values": [
+        {
+          "type": "f32"
+        },
+        {
+          "type": "f32"
+        }
+      ]
+    }
+  },
+  "outputs": {
+    "test_f32": {
+      "values": [
+        {
+          "type": "f32"
+        }
+      ]
+    },
+    "test_f32_1": {
+      "values": [
+        {
+          "type": "f32"
+        }
+      ]
+    },
+    "test_i32": {
+      "values": [
+        {
+          "type": "i32"
+        }
+      ]
+    },
+    "test_f32x2": {
+      "values": [
+        {
+          "type": "f32"
+        },
+        {
+          "type": "f32"
+        }
+      ]
+    }
+  },
+  "edges": [
+    {
+      "source": ".input",
+      "target": "ValuesLatch_1.values"
+    },
+    {
+      "source": "ValuesLatch_1.values",
+      "target": ".test_f32"
+    },
+    {
+      "source": "PortValuesSend_3.status",
+      "target": ".test_i32"
+    },
+    {
+      "source": "ValuesLatch_2.values",
+      "target": "PortValuesSend_3.values"
+    },
+    {
+      "source": "ValuesLatch_2.values",
+      "target": ".test_f32x2"
+    },
+    {
+      "source": ".input_1",
+      "target": "ValuesLatch_2.values"
+    }
+  ]
+}
