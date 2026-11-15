@@ -40,7 +40,7 @@ from .plugin_management.plugin_host import PluginHost
 from .runtime_config import RuntimeConfig
 
 
-__version__ = "1.0.0"
+__version__ = "1.1.0.dev0"
 
 logger = logging.getLogger(__name__)
 

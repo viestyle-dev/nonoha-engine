@@ -48,6 +48,22 @@ client.addClosedCallback((wasClean) => { /* reconnect logic */ });
 client.dispatchInput({ portName: 'name', values: [{ dataType, shape, array }] });
 ```
 
+### Custom Views (ES modules)
+
+Ship your own displays with the plugin: `plugins/user-nodes/static/views/`
+holds a `manifest.json` and plain-JS view modules (see the example
+`spectrum-bars.js`). The editor shows them as "View" nodes (add menu → Views);
+apps show them with `NonohaClient.mountView`. Details: "Plugin Views" in
+`nonoha-engine/AGENTS.md`.
+
+### Monitoring in the Editor
+
+With the inspector (engine 1.1+), output ports glow while values flow;
+click a port name to peek, pin the peek as a display node, or preview an
+output inside its node (eye icon in the node toolbar). A display node can
+connect straight to an engine node output (dashed, sampled); select the
+dashed edge → "Make output port" when an app needs every value.
+
 ## Key Files
 
 | File | Purpose |
@@ -57,7 +73,8 @@ client.dispatchInput({ portName: 'name', values: [{ dataType, shape, array }] })
 | `plugins/manifest.json` | Plugin enable/disable configuration |
 | `flows/default.vnf/app/index.html` | Custom app UI |
 | `flows/default.vnf/graphs/app.vng/graph.json` | App backend graph definition |
-| `flows/default.vnf/graphs/app.vng/editors/nonoha-editor/models/settings.json` | Editor node layout |
+| `flows/default.vnf/graphs/app.vng/editors/nonoha-editor/models/settings.json` | Editor node layout (positions, display nodes, waypoints) |
+| `plugins/user-nodes/static/views/` | Custom views for the editor and apps |
 
 ## Technical Reference
 

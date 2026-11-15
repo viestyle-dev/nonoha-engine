@@ -85,9 +85,13 @@ plugins/
 ├── manifest.json                 # Plugin registry
 └── my_plugin/                    # Plugin directory (underscores)
     ├── pyproject.toml            # Package metadata
-    └── my_plugin/                # Python package (same name)
-        ├── __init__.py           # register_nodes(registry) — REQUIRED
-        └── nodes.py              # Node implementations
+    ├── my_plugin/                # Python package (same name)
+    │   ├── __init__.py           # register_nodes(registry) — REQUIRED
+    │   └── nodes.py              # Node implementations
+    └── static/                   # Optional, outside the Python package (not in the wheel)
+        └── views/                # Custom views (ES modules) — see "Plugin Views"
+            ├── manifest.json
+            └── my-view.js
 ```
 
 ### manifest.json
@@ -133,6 +137,78 @@ def register_nodes(registry: NodeRegistry):
 async def finalize():
     pass
 ```
+
+Optional: `register_portable_nodes(registry)` registers only the nodes that
+need no devices or desktop-only modules (no camera, audio device, ...). An
+embedded runtime (mobile, no FastAPI) calls it instead of `register_nodes`.
+Keep heavy or device imports out of the package's `__init__` top level.
+
+## Plugin Views (static/views)
+
+A plugin can ship custom displays for nonoha-editor and custom apps. The
+engine serves `<plugin>/static/` read-only at `/plugins/{plugin_id}/static/`
+(JS as `text/javascript`, `nosniff`); `GET /node-flow/plugins` lists the
+plugins with their `static` path and a cache-busting `rev`. Python code
+never refers to views: ports stay plain arrays, and views state the shapes
+they accept.
+
+`static/views/manifest.json`:
+
+```json
+{
+  "sdk": 1,
+  "views": [{
+    "id": "my-view", "title": "My view", "description": "...",
+    "module": "my-view.js",
+    "inputs": [{"name": "values", "accepts": ["f32[?]"], "description": "..."}],
+    "settings": {"gain": {"type": "number", "default": 1}},
+    "size": {"width": 420, "height": 300},
+    "suits": [{"node": "MyNode", "port": "out"}]
+  }],
+  "portHints": [{"node": "MyCamera", "port": "frame", "colorOrder": "bgr"}]
+}
+```
+
+`accepts` uses nonoha type notation with `?` for any size (`u8[?x?x3]`),
+`f32[*]` for any rank, or `any`. A view module is plain JavaScript with no
+imports (the browser loads it directly); values arrive with the batch
+dimension first:
+
+```js
+export default {
+  sdk: 1,
+  id: "my-view",
+  inputs: [{ name: "values", accepts: ["f32[?]"] }],
+  mount(el, ctx) {               // ctx: onValues, requestFrame, settings, theme, size
+    const canvas = el.appendChild(document.createElement("canvas"))
+    let latest = null
+    ctx.onValues("values", values => { latest = values[0]; ctx.requestFrame(draw) })
+    function draw() { /* draw latest (last batch row) with ctx.theme colors */ }
+    return { resize(w, h) {}, destroy() { canvas.remove() } }
+  },
+}
+```
+
+Draw only inside `ctx.requestFrame`, reuse buffers (the host may reuse the
+values' typed arrays), and use `ctx.theme` colors. In the editor the view
+becomes a "View" node (add menu → Views); custom apps use `mountView`.
+Built-in apps: Hub copies `static/` folders into `dist/<ws>/plugin_static/`.
+
+## Inspector (port monitoring)
+
+The engine samples port values for monitoring without changing the graph:
+`WS /node-flow/graphs/{graph}/inspector/ws` (implementation:
+`nonoha_core.inspection`, protocol 1). The editor uses it for port
+activity, peek, in-node previews and dashed connections.
+
+- Costs nothing while nobody watches; latest value only, never a queue.
+- Bounded: per-session byte budget, at most 2 unacknowledged frames, and it
+  pauses itself when the event loop lags (resumes when it recovers).
+- Sampled values can miss updates; values an app relies on go through
+  `$output` ports.
+- `--inspector on|off` (default on); `GET /node-flow/capabilities` reports
+  `{"engine", "inspector": {"enabled", "protocol"}, "plugin_static"}`.
+- Client: `NonohaClient.InspectorClient` (nonoha-client-js).
 
 ## Node Implementation
 
@@ -335,6 +411,20 @@ The app communicates with a graph's input/output ports via binary WebSocket prot
 </script>
 ```
 
+### Showing Plugin Views in an App
+
+The views the editor shows can fill an app page too:
+
+```js
+const plugins = await NonohaClient.fetchPlugins(`${host}:${port}`)
+const base = NonohaClient.pluginViewsBase(`${host}:${port}`, plugins.find(p => p.id === 'my_plugin'))
+await NonohaClient.mountView(`${base}my-view.js`, document.getElementById('stage'), {
+  engineGatewayUrl: `${host}:${port}`,
+  graphName: 'app',
+  bindings: { values: 'my_output' },   // view input -> output port (or {node, dir, port} via the inspector)
+})
+```
+
 ### Graph Requirements for App
 
 The graph (`app.vng`) must define input/output ports in `graph.json`:
@@ -385,9 +475,22 @@ Without this file, all nodes appear at default positions when opened in the edit
 ```
 
 Node type mapping:
-- Engine nodes → `"BasicEngineNode"`
+- Engine nodes → `"BasicEngineNode"`; optional `"preview": "<output>"` shows that output inside the node
 - Graph input/output ports → `"BasicPortNode"` (prefix `$input:` or `$output:`)
 - `$graph` → canvas dimensions (no `type` field)
+- Display/input nodes outside the graph → `"$editor:<Type>_<suffix>": {"type", "x", "y", "width"?, "height"?, "label"?, "data": {...}}`
+  (types, handle names and `data` settings: `editor_html/editor-nodes.json`; `nonoha ws catalog` writes it next to the catalog)
+- Waypoints → `"$wp:<id>": {"type": "WaypointNode", "x", "y"}` (relative to `$graph`)
+
+`editor_edges` entries are `{"source", "sourceHandle", "target", "targetHandle", "waypoints"?}`,
+keyed `<source>[:<handle>]-<target>[:<handle>]`:
+- `$output:<port>` → display node: solid edge, every value
+- engine node output → display node: dashed edge, sampled by the inspector
+- display/input node → `$input:<port>`
+- engine edges only need an entry to carry `waypoints`
+
+Lay graphs out left to right, keep display nodes outside the `$graph` frame,
+and route long edges through waypoints.
 
 ## Node Lifecycle
 
@@ -404,6 +507,10 @@ __init__()  →  [added to graph]  →  activate()  →  [running]  →  finaliz
 ```
 GET  /node-flow/graphs                              # List graphs
 GET  /node-flow/catalog/nodes                       # Node catalog
+GET  /node-flow/capabilities                        # Engine version and features (1.1+)
+GET  /node-flow/plugins                             # Loaded plugins (+ static path, rev)
+GET  /plugins/{plugin_id}/static/...                 # Plugin static files (views)
+WS   /node-flow/graphs/{graph}/inspector/ws         # Inspector (sampling, activity)
 
 POST   /node-flow/graphs/{graph}/nodes              # Create node
 DELETE /node-flow/graphs/{graph}/nodes/{node}        # Delete node
@@ -423,7 +530,9 @@ DELETE /node-flow/graphs/{graph}/edges/{edge}        # Disconnect
 | `packages/nonoha-core/src/nonoha_core/data_type.py` | DataType enum, PortValueType |
 | `packages/nonoha-core/src/nonoha_core/node_registry.py` | NodeRegistry |
 | `packages/nonoha-core/src/nonoha_core/nodes/` | Built-in node implementations |
+| `packages/nonoha-core/src/nonoha_core/inspection/` | Inspector (probes, budgets, sample frames) |
 | `nonoha_engine/node_flow/router.py` | REST/WebSocket API |
+| `nonoha_engine/node_flow/inspector_ws.py` | Inspector WebSocket host |
 | `nonoha_engine/node_flow/node.py` | WebSocket endpoint binary protocol |
 | `templates/default/` | Template workspace (plugins, app, graphs) |
 
