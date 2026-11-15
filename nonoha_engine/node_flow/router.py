@@ -6,6 +6,8 @@ from fastapi.responses import JSONResponse
 from starlette.responses import FileResponse
 import traceback
 
+from ..env_settings import EnvSettingError, EnvSettings, declared_env
+from .catalog import catalog
 from .node_flow import NodeFlow
 from .models import protocol_model
 from .node import PropertyDataType
@@ -23,6 +25,7 @@ def generate_router(
     inspector_host: Any = None,
     capabilities: dict | None = None,
     plugins: list[dict] | None = None,
+    env_settings: EnvSettings | None = None,
 ):
     router = APIRouter(prefix="/node-flow")
 
@@ -35,6 +38,46 @@ def generate_router(
     async def get_plugins() -> list[dict]:
         """Loaded plugins and where their static folders are served."""
         return plugins or []
+
+    # -- Environment values (names and status only; values never leave) --
+
+    def _env_settings() -> EnvSettings:
+        if env_settings is None:
+            raise HTTPException(status_code=404, detail="Environment settings are not available")
+        return env_settings
+
+    @router.get("/env")
+    async def get_env() -> dict:
+        return _env_settings().status(declared_env(node_flow))
+
+    def _write_env(name: str, value: str | None) -> dict:
+        settings = _env_settings()
+        declared = declared_env(node_flow)
+        try:
+            if value is None:
+                settings.remove_value(name, declared)
+            else:
+                settings.set_value(name, value, declared)
+        except EnvSettingError as e:
+            raise HTTPException(status_code=e.status_code, detail=e.message) from None
+        return settings.status(declared)
+
+    @router.put("/env/{name}")
+    async def put_env(name: str, request: Request) -> dict:
+        # Parsed by hand: FastAPI's validation errors echo the request body,
+        # which would send the value back (and into any proxy's logs).
+        try:
+            body = await request.json()
+        except Exception:
+            body = None
+        value = body.get("value") if isinstance(body, dict) else None
+        if not isinstance(value, str):
+            raise HTTPException(status_code=400, detail='Send a JSON object {"value": "..."}')
+        return _write_env(name, value)
+
+    @router.delete("/env/{name}")
+    async def delete_env(name: str) -> dict:
+        return _write_env(name, None)
 
     @router.websocket("/graphs/{graph_name}/inspector/ws")
     async def websocket_graphs_graph_inspector_ws(websocket: WebSocket, graph_name: str):
@@ -576,41 +619,7 @@ def generate_router(
 
     @router.get("/catalog/nodes")
     async def get_catalog_nodes():
-        catalog = []
-        for defn in node_flow.node_registry.node_definitions.values():
-            m = defn.metadata
-            entry = {
-                "type": defn.type_name,
-                "description": m.description,
-                "category": m.category,
-                "inputs": [
-                    {
-                        "name": p.name,
-                        "description": p.description,
-                        "types": p.value_types,
-                        **({"value_names": p.value_names} if any(n is not None for n in p.value_names) else {}),
-                    }
-                    for p in m.inputs
-                ],
-                "outputs": [
-                    {
-                        "name": p.name,
-                        "description": p.description,
-                        "types": p.value_types,
-                        **({"value_names": p.value_names} if any(n is not None for n in p.value_names) else {}),
-                    }
-                    for p in m.outputs
-                ],
-                "properties": {
-                    name: {
-                        "default": prop.default,
-                        "description": prop.description,
-                    }
-                    for name, prop in m.properties.items()
-                },
-            }
-            catalog.append(entry)
-        return catalog
+        return catalog(node_flow.node_registry)
 
     # -- Data file access --
 

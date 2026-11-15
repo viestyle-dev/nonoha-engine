@@ -33,7 +33,7 @@ def start_server(tmp_path, inspector_enabled=True):
     plugins = tmp_path / "plugins"
     shutil.copytree(TEMPLATE / "plugins", plugins)
     static = plugins / "user-nodes" / "static" / "views"
-    static.mkdir(parents=True)
+    static.mkdir(parents=True, exist_ok=True)
     (static / "manifest.json").write_text('{"schema": 1, "views": []}', encoding="utf-8")
     (static / "hello.js").write_text("export const hello = 1;\n", encoding="utf-8")
 
@@ -157,3 +157,31 @@ def test_graph_endpoint_survives_text_frames(server):
         got = ws.recv(timeout=5)  # still served after the text frame
         assert isinstance(got, bytes) and got[0] == 0x01
         ws.send(bool_input_event("enabled", False))
+
+
+def test_request_guard_is_wired_for_http_and_websocket(server):
+    """A real server answers foreign Origins and rebound Hosts with 403."""
+    def status(path, headers):
+        req = urllib.request.Request(f"http://127.0.0.1:{server}{path}", headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status, r.headers
+        except urllib.error.HTTPError as e:
+            return e.code, e.headers
+
+    assert status("/node-flow/graphs", {"Origin": f"http://127.0.0.1:{server}"})[0] == 200
+    assert status("/node-flow/graphs", {"Origin": "http://localhost:3000"})[0] == 200
+    code, _ = status("/node-flow/graphs", {"Origin": "https://evil.example"})
+    assert code == 403
+    assert status("/node-flow/graphs", {"Host": "rebind.attacker.test"})[0] == 403
+    # Allowed cross-origin callers still get CORS headers (no credentials)
+    _, headers = status("/node-flow/graphs", {"Origin": "http://localhost:3000"})
+    assert headers["access-control-allow-origin"] == "*"
+    assert "access-control-allow-credentials" not in headers
+
+    with pytest.raises(Exception):
+        connect(f"ws://127.0.0.1:{server}/node-flow/graphs/app/endpoint/ws",
+                additional_headers={"Origin": "https://evil.example"}, open_timeout=5)
+    with connect(f"ws://127.0.0.1:{server}/node-flow/graphs/app/endpoint/ws",
+                 additional_headers={"Origin": f"http://127.0.0.1:{server}"}, open_timeout=5):
+        pass

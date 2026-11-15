@@ -207,8 +207,79 @@ activity, peek, in-node previews and dashed connections.
 - Sampled values can miss updates; values an app relies on go through
   `$output` ports.
 - `--inspector on|off` (default on); `GET /node-flow/capabilities` reports
-  `{"engine", "inspector": {"enabled", "protocol"}, "plugin_static"}`.
+  `{"engine", "inspector": {"enabled", "protocol"}, "plugin_static", "env_settings"}`.
 - Client: `NonohaClient.InspectorClient` (nonoha-client-js).
+
+## Environment Values (API keys and per-machine settings)
+
+Values that belong to a deployment, not to the graph: API keys, a provider
+URL. The graph stores only the *name* (e.g. a property `api_key_env =
+"GEMINI_API_KEY"`); the value comes from the machine.
+
+```python
+from nonoha_core import environment
+from nonoha_core.node import EnvDoc, NodeDoc
+
+class MyApiNode(BaseNode):
+    @classmethod
+    def describe(cls, properties=None):
+        name = str((properties or {}).get("api_key_env") or "MY_API_KEY")
+        return NodeDoc(
+            description="...",
+            env=(EnvDoc(name, "API key for My Service", "https://example.com/keys"),),
+        )
+
+    def _send(self):
+        key = environment.get(str(self.properties["api_key_env"]) or "MY_API_KEY")
+        if not key:
+            ...  # report "MY_API_KEY is not set" on an error output; keep running
+```
+
+- **Read when used, never keep**: call `environment.get(name)` at the moment
+  of use (each request, each reconnect). A value set while the engine runs
+  then applies to the next request; there are no change notifications.
+- **Declare** every name in `describe(properties)` (`NodeDoc.env`): the
+  editor lists it, and the engine accepts values only for declared names.
+- **Never** put a value in a property, a port, a log line or an error text
+  (mask it: `message.replace(key, "***")`).
+- Where values come from: the workspace's `.env` (`<workspace>/.env`, loaded
+  into `os.environ` at start; never published, exported or built), the OS
+  environment (it wins over `.env`), and values set while running (the
+  editor's Environment settings; `GET/PUT/DELETE /node-flow/env`, which
+  never return values). Built apps use a per-user `.env`
+  (`nonoha/apps/<app_id>/.env` under the OS's local app data).
+- Names that steer processes or libraries (`PATH`, `*_PROXY`, `PYTHON*`,
+  `SSL_*`, `NONOHA_*`, ...) cannot be written by clients; libraries' own
+  settings (proxy, certificates, `OMP_NUM_THREADS`) belong in the OS
+  environment or `.env` by hand. Settings read when numpy loads must be set
+  in the OS environment.
+
+### Per-machine property values
+
+Whether a value differs per machine (a camera index, an audio device)
+depends on the use case, so nodes do not decide it. Make it a **graph
+property**, feed it to the node's `@property` port with a
+`GraphPropertiesChanged` node, and let the app or host set the graph
+property (`PATCH /node-flow/graphs/{graph}/properties`; the embedded runtime
+uses `update_graph_properties`). A built app's or kiosk's graph.json is that
+deployment's own copy.
+
+## Access from Browsers and Other Machines
+
+The engine has no login: whoever reaches it can edit graphs and run code.
+
+- It refuses requests from other web sites (CSRF) and from rebound host
+  names (DNS rebinding): `Origin` must be the same origin, loopback, a
+  private-network address or a `.local`/single-label name; `Host` must be an
+  IP address, `localhost`, a single-label or `.local` name, or this machine's
+  name. Same-machine use, LAN use (`--host 0.0.0.0`), the dev editor on
+  another port, SSH forwarding and VPN IPs need nothing.
+- Tunnels, VPN host names and company DNS names: `--allow-host NAME`
+  (repeatable; `.example.com` also allows subdomains). Pages on other sites:
+  `--allow-origin https://dash.example.com`. Built apps:
+  `RuntimeConfig(allow_hosts=(...), allow_origins=(...))`.
+- `--host 0.0.0.0` (or a public tunnel) lets anyone who reaches the port
+  edit graphs and run code on this machine.
 
 ## Node Implementation
 
@@ -511,6 +582,9 @@ GET  /node-flow/capabilities                        # Engine version and feature
 GET  /node-flow/plugins                             # Loaded plugins (+ static path, rev)
 GET  /plugins/{plugin_id}/static/...                 # Plugin static files (views)
 WS   /node-flow/graphs/{graph}/inspector/ws         # Inspector (sampling, activity)
+GET    /node-flow/env                               # Environment value names and status (never values)
+PUT    /node-flow/env/{name}  {"value": "..."}       # Set a declared value (written to .env)
+DELETE /node-flow/env/{name}                         # Remove it
 
 POST   /node-flow/graphs/{graph}/nodes              # Create node
 DELETE /node-flow/graphs/{graph}/nodes/{node}        # Delete node

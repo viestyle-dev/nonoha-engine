@@ -64,6 +64,24 @@ output inside its node (eye icon in the node toolbar). A display node can
 connect straight to an engine node output (dashed, sampled); select the
 dashed edge → "Make output port" when an app needs every value.
 
+### API Keys and Per-machine Values
+
+Keys and other per-machine values are **environment values**: the graph
+stores only a name, the value lives in this workspace's `.env` (never
+published, exported or built; it is in `.gitignore`). Nodes read them with
+`nonoha_core.environment.get(name)` when they use them and declare the names
+in `describe()` (`NodeDoc.env`). Set values in nonoha Hub or with `nonoha ws
+env set` while the engine is stopped, or in the editor (menu > Environment
+settings) while it runs. Values that differ per machine but are not secret
+(a camera index) are graph properties. Details: "Environment Values" in
+`nonoha-engine/AGENTS.md`.
+
+### Access
+
+The engine has no login. It refuses requests from other web sites and
+rebound host names; tunnels and VPN host names need `--allow-host NAME`.
+With `--host 0.0.0.0` anyone on the network can edit graphs and run code.
+
 ## Key Files
 
 | File | Purpose |
@@ -75,6 +93,7 @@ dashed edge → "Make output port" when an app needs every value.
 | `flows/default.vnf/graphs/app.vng/graph.json` | App backend graph definition |
 | `flows/default.vnf/graphs/app.vng/editors/nonoha-editor/models/settings.json` | Editor node layout (positions, display nodes, waypoints) |
 | `plugins/user-nodes/static/views/` | Custom views for the editor and apps |
+| `.env` | This machine's environment values (API keys); never committed, published or built |
 
 ## Technical Reference
 
