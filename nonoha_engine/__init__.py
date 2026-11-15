@@ -33,6 +33,9 @@ from nonoha_engine.node_flow.nodes import (
 
 # import nonoha_engine.webrtc_gateway.router
 
+from nonoha_core.inspection import PROTOCOL_VERSION as INSPECTOR_PROTOCOL_VERSION
+
+from .node_flow.inspector_ws import InspectorHost
 from .plugin_management.plugin_host import PluginHost
 from .runtime_config import RuntimeConfig
 
@@ -136,6 +139,48 @@ class AppStaticFiles(StaticFiles):
         return response
 
 
+_STATIC_MEDIA_TYPES = {
+    ".js": "text/javascript",
+    ".mjs": "text/javascript",
+    ".json": "application/json",
+    ".css": "text/css",
+    ".svg": "image/svg+xml",
+    ".wasm": "application/wasm",
+}
+
+
+class PluginStaticFiles(StaticFiles):
+    """A plugin's static folder, served as-is (the engine never reads it).
+
+    Media types are fixed for script-like files: on Windows the registry can
+    map .js to text/plain, which browsers refuse for ES modules.
+    """
+
+    def file_response(self, full_path, stat_result, scope, status_code=200):
+        request_headers = Headers(scope=scope)
+        media_type = _STATIC_MEDIA_TYPES.get(pathlib.Path(str(full_path)).suffix.lower())
+        response = FileResponse(
+            full_path, status_code=status_code, stat_result=stat_result, media_type=media_type
+        )
+        response.headers["Cache-Control"] = "no-cache"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+
+        if self.is_not_modified(response.headers, request_headers):
+            return NotModifiedResponse(response.headers)
+        return response
+
+
+def _static_rev(static_dir: pathlib.Path) -> str:
+    """A cheap revision of a static folder, for cache-busting module URLs."""
+    newest = 0.0
+    for path in static_dir.rglob("*"):
+        try:
+            newest = max(newest, path.stat().st_mtime)
+        except OSError:
+            continue
+    return str(int(newest))
+
+
 def _register_all_nodes(
     node_registry: NodeRegistry,
     plugin_host: PluginHost,
@@ -178,6 +223,7 @@ async def _generate_app(
     runtime_config: RuntimeConfig,
     plugins_path: pathlib.Path | None = None,
     editor_html_path: pathlib.Path | None = None,
+    inspector_enabled: bool = True,
 ) -> tuple[FastAPI, bool, bool]:  # Returns app, has_editor_html, has_app_html
 
     _register_all_nodes(node_registry, plugin_host, runtime_config, plugins_path)
@@ -189,12 +235,48 @@ async def _generate_app(
     @app.get("/")
     async def get_root():
         return {
-            "node_flow_url": "/node_flow",
+            "node_flow_url": "/node-flow",
         }
 
-    app.include_router(
-        nonoha_engine.node_flow.router.generate_router(node_flow_instance)
+    plugins = []
+    for info in plugin_host.plugin_infos():
+        static_dir = info["static_dir"]
+        plugins.append({
+            "id": info["id"],
+            "name": info["name"],
+            "builtin": info["builtin"],
+            "version": info["version"],
+            "static": f"/plugins/{info['id']}/static/" if static_dir is not None else None,
+            "rev": _static_rev(static_dir) if static_dir is not None else None,
+        })
+
+    inspector_host = InspectorHost(
+        node_flow_instance,
+        inspector_enabled,
+        plugins=[{"id": p["id"], "name": p["name"], "version": p["version"]} for p in plugins],
     )
+    capabilities = {
+        "engine": __version__,
+        "inspector": {"enabled": inspector_enabled, "protocol": INSPECTOR_PROTOCOL_VERSION},
+        "plugin_static": True,
+    }
+
+    app.include_router(
+        nonoha_engine.node_flow.router.generate_router(
+            node_flow_instance,
+            inspector_host=inspector_host if inspector_enabled else None,
+            capabilities=capabilities,
+            plugins=plugins,
+        )
+    )
+
+    for info in plugin_host.plugin_infos():
+        if info["static_dir"] is not None:
+            app.mount(
+                f"/plugins/{info['id']}/static",
+                PluginStaticFiles(directory=info["static_dir"]),
+                name=f"plugin-static-{info['id']}",
+            )
 
     # app.include_router(nonoha_engine.webrtc_gateway.router.generate_router())
 
@@ -406,6 +488,21 @@ async def main(runtime_config: RuntimeConfig):
         help="Read-only mode: changes are not persisted to disk",
     )
 
+    parser.add_argument(
+        "--inspector",
+        choices=["on", "off"],
+        default=None,
+        help="Inspector WebSocket endpoint for live port sampling (default: on unless the build turned it off)",
+    )
+
+    parser.add_argument(
+        "--plugin-static",
+        type=str,
+        default=None,
+        help="Folder holding built-in plugins' static folders (<dir>/<plugin_id>/); default: <engine root>/plugin_static",
+        dest="plugin_static_path",
+    )
+
     subparsers = parser.add_subparsers(dest="subparser")
 
     if runtime_config.includes_fbc_commands:
@@ -512,7 +609,14 @@ async def main(runtime_config: RuntimeConfig):
     if args.readonly:
         logging.info("Read-only mode enabled")
 
-    plugin_host = PluginHost()
+    plugin_static_path = args.plugin_static_path or runtime_config.plugin_static_path
+    plugin_host = PluginHost(
+        pathlib.Path(plugin_static_path) if plugin_static_path else engine_root_path / "plugin_static"
+    )
+    inspector_enabled = (
+        runtime_config.inspector_enabled if args.inspector is None else args.inspector == "on"
+    )
+    logging.info(f"Inspector: {'on' if inspector_enabled else 'off'}")
 
     # Create command queue and shutdown event for stdin monitoring
     command_queue = queue.Queue()
@@ -538,6 +642,7 @@ async def main(runtime_config: RuntimeConfig):
             runtime_config,
             pathlib.Path(args.plugins_path) if args.plugins_path else None,
             editor_html_path=editor_html_path,
+            inspector_enabled=inspector_enabled,
         )
         config = uvicorn.Config(
             app,
@@ -582,7 +687,7 @@ async def main(runtime_config: RuntimeConfig):
             f"  • Binding: http://{server_uri}\n"
             + (
                 f"─────────────────────────────────────────────\n"
-                f"Inspector GUI:\n"
+                f"Editor:\n"
                 f"  • http://{inspector_uri}/editor?engine-uri={inspector_uri}\n"
                 if has_editor_html
                 else ""

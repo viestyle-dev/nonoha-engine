@@ -311,7 +311,10 @@ class NodeGraph(BaseNodeGraph[FileNodeGraphPersist]):
                     await websocket.send(
                         {"type": "websocket.send", "bytes": bytes_to_send}
                     )
-                except WebSocketDisconnect:
+                except Exception:
+                    # A closing socket (WebSocketDisconnect, uvicorn's
+                    # ClientDisconnected, RuntimeError after close) must not
+                    # stop delivery to the other sockets.
                     pass
 
     def handle_endpoint_event(
@@ -502,18 +505,25 @@ class NodeGraph(BaseNodeGraph[FileNodeGraphPersist]):
 
         try:
             while True:
-                received_bytes = await websocket.receive_bytes()
-                # print(f"!< {time.time_ns()}")
-                self.handle_endpoint_event(
-                    EndpointEventType(received_bytes[0]), received_bytes
-                )
-                # await asyncio.sleep(0)
-        except WebSocketDisconnect:
+                message = await websocket.receive()
+                if message.get("type") == "websocket.disconnect":
+                    break
+                received_bytes = message.get("bytes")
+                if not received_bytes:
+                    continue  # text frames are not part of this protocol
+                try:
+                    self.handle_endpoint_event(
+                        EndpointEventType(received_bytes[0]), received_bytes
+                    )
+                except ValueError:
+                    logger.warning("Unknown endpoint event type %r", received_bytes[0])
+        except (WebSocketDisconnect, RuntimeError):
             pass
-
-        ws_tuple = self._active_web_sockets
-        i = ws_tuple.index(websocket)
-        self._active_web_sockets = ws_tuple[:i] + ws_tuple[i + 1 :]
+        finally:
+            ws_tuple = self._active_web_sockets
+            if websocket in ws_tuple:
+                i = ws_tuple.index(websocket)
+                self._active_web_sockets = ws_tuple[:i] + ws_tuple[i + 1 :]
 
     def notify_node_updated(self, node: BaseNode):
         if self._persist is None:

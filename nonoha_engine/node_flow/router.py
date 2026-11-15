@@ -18,8 +18,31 @@ from nonoha_core.port import (
 )
 
 
-def generate_router(node_flow: NodeFlow):
+def generate_router(
+    node_flow: NodeFlow,
+    inspector_host: Any = None,
+    capabilities: dict | None = None,
+    plugins: list[dict] | None = None,
+):
     router = APIRouter(prefix="/node-flow")
+
+    @router.get("/capabilities")
+    async def get_capabilities() -> dict:
+        """What this engine offers, so clients can enable features by capability."""
+        return capabilities or {}
+
+    @router.get("/plugins")
+    async def get_plugins() -> list[dict]:
+        """Loaded plugins and where their static folders are served."""
+        return plugins or []
+
+    @router.websocket("/graphs/{graph_name}/inspector/ws")
+    async def websocket_graphs_graph_inspector_ws(websocket: WebSocket, graph_name: str):
+        if inspector_host is None:
+            await websocket.accept()
+            await websocket.close(code=4403)
+            return
+        await inspector_host.handle(websocket, graph_name)
 
     @router.post("/graphs")
     async def post_graphs():
