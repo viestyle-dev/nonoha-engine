@@ -62,6 +62,7 @@ uv run main.py --plugins ./templates/default/plugins catalog -o catalog.json
 ## Common Pitfalls
 
 - **Clock node requires `enabled=true`** to start emitting time values. It does NOT auto-start. You must send `true` to its `enabled` input port (e.g., via a graph input connected from the app, or a RealNumberValue node).
+- **Times are f64** (Clock, TickClock, SystemTime): a float32 time is coarser than a sample after hours at 600 Hz (about a minute at 192 kHz). Declare time inputs as f64: f32 senders still connect to them, but an f64 sender cannot connect to an f32 input.
 - **Stopping the engine**: Send `quit` to the engine's stdin for graceful shutdown. When running in background, use a named pipe:
 
 ```bash

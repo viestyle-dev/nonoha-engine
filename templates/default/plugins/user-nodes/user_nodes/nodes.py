@@ -32,7 +32,7 @@ class SynthesizerNode(BaseNode):
     Total: ~15+ basic nodes replaced by this single node.
 
     Input ports:
-        time    — Time array from Clock node (f32)
+        time    — Time array from Clock node (f64)
         frequency — Base frequency from app (f32, default 440)
         harmonics — Number of harmonics from app (f32, default 4)
         waveform_type — Wave shape: 0=sine, 1=square, 2=saw, 3=triangle (f32)
@@ -47,7 +47,7 @@ class SynthesizerNode(BaseNode):
             description="Multi-harmonic waveform synthesizer (sine/square/saw/triangle)",
             category="Custom",
             inputs={
-                "time": "Time array from Clock",
+                "time": "Time array from Clock (seconds, f64)",
                 "frequency": "Base frequency (Hz)",
                 "harmonics": "Number of harmonics",
                 "waveform_type": "0=sine 1=square 2=saw 3=tri",
@@ -66,8 +66,9 @@ class SynthesizerNode(BaseNode):
 
         f32 = PortValueType(DataType.Float32)
 
-        # Input: time values from Clock node
-        self._in_time = StaticTypeInputPort("time", [f32])
+        # Input: time values from Clock node (f64: float32 times lose
+        # precision after hours, and f32 senders still connect to f64)
+        self._in_time = StaticTypeInputPort("time", [PortValueType(DataType.Float64)])
         self._in_time.subscribe(id(self), self._on_time)
         self.inputs[self._in_time.name] = self._in_time
 
