@@ -105,6 +105,7 @@ See `nonoha-engine/AGENTS.md` — the comprehensive engine development guide.
 
 - Engine: Python 3.11, FastAPI, numpy-based data flow
 - All data flows as numpy arrays with batch dimensions (scalar 5.0 = np.array([5.0]))
+- A dispatched value is valid during the dispatch only: senders may reuse their output buffers, so copy a received value (`values[0].copy()`) to keep it past the callback
 - Nodes: 2-phase init (`__init__` for setup, `activate()` for runtime)
 - Custom app communicates via WebSocket binary protocol
 - App connects to `app.vng` graph; use GraphProxy for cross-graph data

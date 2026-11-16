@@ -255,6 +255,9 @@ class NodeGraph(BaseNodeGraph[FileNodeGraphPersist]):
         self._broadcast_task: asyncio.Task | None = None
 
         self._outputs_buffer: list[bytes] = []
+        # True when outputs were dispatched since the last flush (the flush
+        # callbacks run even when no WebSocket needs the bytes).
+        self._outputs_dispatched = False
         self._editor_models: dict[str, file_model.EditorModel] = {}
         self._data_storage: DataStorage | None = None
 
@@ -266,6 +269,10 @@ class NodeGraph(BaseNodeGraph[FileNodeGraphPersist]):
         super().finalize()
 
     def _on_output(self, port: StaticTypeOutputPort, values: list[Any]):
+        self._outputs_dispatched = True
+        if not self._active_web_sockets:
+            return  # nobody to send to: skip the serialization
+
         bytes_to_send = bytearray()
         bytes_to_send += EndpointEventType.EVENT_OUTPUT.value.to_bytes(1, "big")
         bytes_to_send += len(port.name).to_bytes(1, "big")
@@ -282,15 +289,17 @@ class NodeGraph(BaseNodeGraph[FileNodeGraphPersist]):
         self._outputs_buffer.append(bytes_to_send)
 
     def flush_outputs(self):
-        if len(self._outputs_buffer) == 0:
+        if not self._outputs_dispatched:
             return
+        self._outputs_dispatched = False
 
         buffered = self._outputs_buffer
-        self._outputs_buffer = []
-        prev = self._broadcast_task
-        self._broadcast_task = asyncio.create_task(
-            self._broadcast_outputs(buffered, prev)
-        )
+        if buffered:
+            self._outputs_buffer = []
+            prev = self._broadcast_task
+            self._broadcast_task = asyncio.create_task(
+                self._broadcast_outputs(buffered, prev)
+            )
 
         for callback in self._flush_outputs_callbacks.values():
             callback()

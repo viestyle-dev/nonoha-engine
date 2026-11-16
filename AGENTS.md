@@ -33,11 +33,12 @@ Custom App: `http://localhost:8000/app`
 
 1. **All data flows as numpy arrays with batch dimension** — scalar `5.0` → `np.array([5.0])` shape `(1,)`
 2. **`dispatch()` values must include batch dimension** — if port type is `f32[N]` (ndim=1), dispatched array must be shape `(batch, N)` i.e. ndim=2. Add `[np.newaxis]` to prepend batch dim. This is auto-validated during `pytest` via the `nonoha_core._testing` plugin.
-3. **`__init__()` must be side-effect-free** — no asyncio, no I/O, no network. Use `activate()` for runtime
-4. **Port names cannot contain**: `.` (dot), `-` (hyphen), `$` (dollar) — reserved delimiters
-5. **Always call `notify_node_updated()`** after modifying ports in `set_properties()`
-6. **Python 3.11 only** — 3.12+ is not supported
-7. **Use `catalog` subcommand to discover nodes** — do NOT scan source files manually
+3. **Dispatched values are valid during the dispatch only** — a sender may reuse its output buffer every dispatch (write with `out=` into arrays allocated once); a node that keeps a received value past its callback must copy it (`values[0].copy()`)
+4. **`__init__()` must be side-effect-free** — no asyncio, no I/O, no network. Use `activate()` for runtime
+5. **Port names cannot contain**: `.` (dot), `-` (hyphen), `$` (dollar) — reserved delimiters
+6. **Always call `notify_node_updated()`** after modifying ports in `set_properties()`
+7. **Python 3.11 only** — 3.12+ is not supported
+8. **Use `catalog` subcommand to discover nodes** — do NOT scan source files manually
 
 ## Node Catalog
 
