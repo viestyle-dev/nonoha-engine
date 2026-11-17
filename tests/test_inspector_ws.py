@@ -34,7 +34,7 @@ def start_server(tmp_path, inspector_enabled=True):
     shutil.copytree(TEMPLATE / "plugins", plugins)
     static = plugins / "user-nodes" / "static" / "views"
     static.mkdir(parents=True, exist_ok=True)
-    (static / "manifest.json").write_text('{"schema": 1, "views": []}', encoding="utf-8")
+    (static / "manifest.json").write_text('{"sdk": 1, "views": []}', encoding="utf-8")
     (static / "hello.js").write_text("export const hello = 1;\n", encoding="utf-8")
 
     holder = {}

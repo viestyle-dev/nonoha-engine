@@ -87,7 +87,9 @@
   </div>
   <div class="status" id="status">Connecting...</div>
 
+  <!-- NonohaClient: engine communication. NonohaViews: plugin views (mountView); unused here. -->
   <script src="nonoha-client.iife.js"></script>
+  <script src="nonoha-views.iife.js"></script>
   <script>
     const host = window.location.hostname || 'localhost';
     const port = window.location.port || '8000';

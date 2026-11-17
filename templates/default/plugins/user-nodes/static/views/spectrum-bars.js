@@ -3,14 +3,17 @@
 //
 // How plugin views work
 // - Files in <plugin>/static/ are served by the engine; views live in
-//   static/views/ and are listed in static/views/manifest.json (same id,
-//   inputs and settings as below, plus "module" and "suits").
+//   static/views/. static/views/manifest.json lists them and is generated
+//   from the modules (nonoha-views' view-manifest tool), so this file is the
+//   source of the id, inputs, settings, size and suits.
 // - The browser imports this file directly, so it is a plain ES module with
 //   NO imports. The default export is the view definition with `sdk: 1`.
-// - The host (editor node, or an app via mountView) calls mount(el, ctx) and
-//   pushes port values with ctx.onValues. A value is { dataType, shape, array }:
-//   shape[0] is the batch, `array` a typed array the host may reuse after
-//   your callback returns, so copy what you keep.
+// - A view only reads: the host (e.g. an editor's View node, or an app via
+//   mountView) calls mount(el, ctx) and pushes port values with
+//   ctx.onValues. A value is { dataType, shape, array }: shape[0] is the
+//   batch, `array` a typed array the host may reuse after your callback
+//   returns, so copy what you keep.
+// - ctx.settings arrive resolved: numbers parsed and kept within min..max.
 // - Draw only inside ctx.requestFrame(draw): calls within one animation
 //   frame coalesce, so fast inputs never draw more often than the screen.
 // - Use ctx.theme colors only (background, text, textMuted, grid, accent,
@@ -27,13 +30,17 @@ export default {
       // "f32": the whole value is one spectrum (SpectrumAnalyzer sends its bins as one batch).
       // "f32[?]": one spectrum per batch row; the last row is shown.
       accepts: ["f32", "f32[?]", "f64[?]"],
+      // Only the latest spectrum is drawn: hosts show the current one first
+      // and may skip spectra in between ("every" would deliver each one).
+      delivery: "latest",
       description: "Magnitudes per bin",
     },
   ],
   settings: {
-    max: { type: "number", default: 1, description: "Value at full height; 0 = the largest bin" },
+    max: { type: "number", default: 1, min: 0, description: "Value at full height; 0 = the largest bin" },
   },
   size: { width: 320, height: 180 },
+  suits: [{ node: "SpectrumAnalyzer", port: "spectrum" }],
 
   mount(el, ctx) {
     const canvas = document.createElement("canvas")
@@ -70,7 +77,7 @@ export default {
         g.fillText("Waiting for a spectrum…", width / 2, height / 2)
         return
       }
-      let max = Number(ctx.settings.max)
+      let max = ctx.settings.max
       if (!(max > 0)) {
         max = 0
         for (let i = 0; i < count; ++i) if (bins[i] > max) max = bins[i]

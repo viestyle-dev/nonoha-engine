@@ -90,10 +90,8 @@ plugins/
     ├── my_plugin/                # Python package (same name)
     │   ├── __init__.py           # register_nodes(registry) — REQUIRED
     │   └── nodes.py              # Node implementations
-    └── static/                   # Optional, outside the Python package (not in the wheel)
-        └── views/                # Custom views (ES modules) — see "Plugin Views"
-            ├── manifest.json
-            └── my-view.js
+    └── static/                   # Optional web files, outside the Python package (not in the wheel) — see "Plugin Static Files"
+        └── views/                # e.g. views for editors and apps (see the workspace's AGENTS.md)
 ```
 
 ### manifest.json
@@ -145,56 +143,20 @@ need no devices or desktop-only modules (no camera, audio device, ...). An
 embedded runtime (mobile, no FastAPI) calls it instead of `register_nodes`.
 Keep heavy or device imports out of the package's `__init__` top level.
 
-## Plugin Views (static/views)
+## Plugin Static Files (static/)
 
-A plugin can ship custom displays for nonoha-editor and custom apps. The
-engine serves `<plugin>/static/` read-only at `/plugins/{plugin_id}/static/`
-(JS as `text/javascript`, `nosniff`); `GET /node-flow/plugins` lists the
-plugins with their `static` path and a cache-busting `rev`. Python code
-never refers to views: ports stay plain arrays, and views state the shapes
-they accept.
+A plugin can ship web files (e.g. views that editors and apps show) in a
+`static/` folder at its root, next to the Python package; wheels do not
+contain it. The engine serves the folder read-only at
+`/plugins/{plugin_id}/static/` (JS as `text/javascript`, `nosniff`) and lists
+it in `GET /node-flow/plugins` with a revision `rev` that changes when a file
+changes (for cache-busting URLs). The engine and Python code never look
+inside: ports stay plain arrays. A frozen build serves the folders from
+`--plugin-static` (e.g. nonoha Hub copies them into
+`dist/<ws>/plugin_static/`).
 
-`static/views/manifest.json`:
-
-```json
-{
-  "sdk": 1,
-  "views": [{
-    "id": "my-view", "title": "My view", "description": "...",
-    "module": "my-view.js",
-    "inputs": [{"name": "values", "accepts": ["f32[?]"], "description": "..."}],
-    "settings": {"gain": {"type": "number", "default": 1}},
-    "size": {"width": 420, "height": 300},
-    "suits": [{"node": "MyNode", "port": "out"}]
-  }],
-  "portHints": [{"node": "MyCamera", "port": "frame", "colorOrder": "bgr"}]
-}
-```
-
-`accepts` uses nonoha type notation with `?` for any size (`u8[?x?x3]`),
-`f32[*]` for any rank, or `any`. A view module is plain JavaScript with no
-imports (the browser loads it directly); values arrive with the batch
-dimension first:
-
-```js
-export default {
-  sdk: 1,
-  id: "my-view",
-  inputs: [{ name: "values", accepts: ["f32[?]"] }],
-  mount(el, ctx) {               // ctx: onValues, requestFrame, settings, theme, size
-    const canvas = el.appendChild(document.createElement("canvas"))
-    let latest = null
-    ctx.onValues("values", values => { latest = values[0]; ctx.requestFrame(draw) })
-    function draw() { /* draw latest (last batch row) with ctx.theme colors */ }
-    return { resize(w, h) {}, destroy() { canvas.remove() } }
-  },
-}
-```
-
-Draw only inside `ctx.requestFrame`, reuse buffers (the host may reuse the
-values' typed arrays), and use `ctx.theme` colors. In the editor the view
-becomes a "View" node (add menu → Views); custom apps use `mountView`.
-Built-in apps: Hub copies `static/` folders into `dist/<ws>/plugin_static/`.
+What the files mean belongs to the hosts that load them. For views, see
+"Custom Views" in the workspace's AGENTS.md (from the workspace template).
 
 ## Inspector (port monitoring)
 
@@ -482,20 +444,6 @@ The app communicates with a graph's input/output ports via binary WebSocket prot
     }]
   });
 </script>
-```
-
-### Showing Plugin Views in an App
-
-The views the editor shows can fill an app page too:
-
-```js
-const plugins = await NonohaClient.fetchPlugins(`${host}:${port}`)
-const base = NonohaClient.pluginViewsBase(`${host}:${port}`, plugins.find(p => p.id === 'my_plugin'))
-await NonohaClient.mountView(`${base}my-view.js`, document.getElementById('stage'), {
-  engineGatewayUrl: `${host}:${port}`,
-  graphName: 'app',
-  bindings: { values: 'my_output' },   // view input -> output port (or {node, dir, port} via the inspector)
-})
 ```
 
 ### Graph Requirements for App
