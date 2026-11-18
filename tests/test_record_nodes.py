@@ -89,7 +89,7 @@ class TestRecordNodeLifecycle:
             time.sleep(0.2)
 
         assert file_path.exists()
-        lines = file_path.read_text().strip().split("\n")
+        lines = file_path.read_text(encoding="utf-8").strip().split("\n")
         assert lines[0] == "header1,header2"
         assert len(lines) >= 2
 
@@ -113,7 +113,7 @@ class TestRecordNodeLifecycle:
                 node._save_worker_thread.join(timeout=2)
             time.sleep(0.2)
 
-        lines = file_path.read_text().strip().split("\n")
+        lines = file_path.read_text(encoding="utf-8").strip().split("\n")
         # No header row — first line is data
         assert "header" not in lines[0]
         assert len(lines) >= 1
@@ -215,7 +215,7 @@ class TestRecordNodePreamble:
             node, file_path, preamble="session_id: sX\ndata_use_consent: true"
         )
 
-        lines = file_path.read_text().strip().split("\n")
+        lines = file_path.read_text(encoding="utf-8").strip().split("\n")
         assert lines[0] == "# session_id: sX"
         assert lines[1] == "# data_use_consent: true"
         assert lines[2] == "header1,header2"
@@ -227,7 +227,7 @@ class TestRecordNodePreamble:
 
         self._run_session(node, file_path, preamble="# already commented\n\nplain")
 
-        lines = file_path.read_text().strip().split("\n")
+        lines = file_path.read_text(encoding="utf-8").strip().split("\n")
         assert lines[0] == "# already commented"
         assert lines[1] == "# plain"
         assert lines[2] == "header1,header2"
@@ -238,7 +238,7 @@ class TestRecordNodePreamble:
 
         self._run_session(node, file_path, preamble=None)
 
-        lines = file_path.read_text().strip().split("\n")
+        lines = file_path.read_text(encoding="utf-8").strip().split("\n")
         assert lines[0] == "header1,header2"
 
     def test_preamble_in_text_format(self, tmp_path):
@@ -268,7 +268,7 @@ class TestRecordNodePreamble:
                 node._save_worker_thread.join(timeout=2)
             time.sleep(0.2)
 
-        lines = file_path.read_text().strip().split("\n")
+        lines = file_path.read_text(encoding="utf-8").strip().split("\n")
         assert lines[0] == "# meta: x"
         assert lines[1] == "msg"
         assert lines[2] == "hello"
@@ -338,7 +338,7 @@ class TestRotatingRecordNodeLifecycle:
 
         log_file = data_dir / "output.log"
         assert log_file.exists()
-        content = log_file.read_text()
+        content = log_file.read_text(encoding="utf-8")
         assert "hello" in content
 
     def test_append_on_restart(self, tmp_path):
@@ -376,7 +376,7 @@ class TestRotatingRecordNodeLifecycle:
             time.sleep(0.2)
 
         log_file = data_dir / "output.log"
-        content = log_file.read_text()
+        content = log_file.read_text(encoding="utf-8")
         assert "first" in content
         assert "second" in content
         # Only one output.log file, no date-stamped copies
@@ -404,7 +404,7 @@ class TestRotatingRecordNodeLifecycle:
             time.sleep(0.2)
 
         log_file = data_dir / "output.log"
-        lines = log_file.read_text().strip().split("\n")
+        lines = log_file.read_text(encoding="utf-8").strip().split("\n")
         assert lines[0] == "hello"
 
     def test_rotation(self, tmp_path):
@@ -498,7 +498,7 @@ class TestRotatingRecordNodeLifecycle:
             time.sleep(0.2)
 
         log_file = data_dir / "output.log"
-        lines = log_file.read_text().strip().split("\n")
+        lines = log_file.read_text(encoding="utf-8").strip().split("\n")
         assert lines[0] == "x,y"
         assert len(lines) >= 2
 
@@ -569,7 +569,7 @@ class TestRecordNodeFormat:
                 node._save_worker_thread.join(timeout=2)
             time.sleep(0.2)
 
-        content = file_path.read_text()
+        content = file_path.read_text(encoding="utf-8")
         assert "message" in content
         assert '"hello, world"' in content
 
@@ -598,7 +598,7 @@ class TestRecordNodeFormat:
                 node._save_worker_thread.join(timeout=2)
             time.sleep(0.2)
 
-        content = file_path.read_text()
+        content = file_path.read_text(encoding="utf-8")
         assert '"say ""hi"""' in content
 
     def test_text_format_single_column(self, tmp_path):
@@ -626,7 +626,7 @@ class TestRecordNodeFormat:
                 node._save_worker_thread.join(timeout=2)
             time.sleep(0.2)
 
-        content = file_path.read_text().strip()
+        content = file_path.read_text(encoding="utf-8").strip()
         # No quoting in text mode — raw value
         assert content == "hello, world"
 
@@ -667,7 +667,7 @@ class TestRotatingRecordNodeFormat:
                 node._save_worker_thread.join(timeout=2)
             time.sleep(0.2)
 
-        content = (data_dir / "output.log").read_text()
+        content = (data_dir / "output.log").read_text(encoding="utf-8")
         assert "message" in content
         assert '"hello, world"' in content
 
@@ -695,7 +695,7 @@ class TestRotatingRecordNodeFormat:
                 node._save_worker_thread.join(timeout=2)
             time.sleep(0.2)
 
-        content = (data_dir / "output.log").read_text().strip()
+        content = (data_dir / "output.log").read_text(encoding="utf-8").strip()
         assert content == "hello, world"
 
     def test_text_format_rejects_multi_column(self):
@@ -713,30 +713,30 @@ class TestRotatingRecordNodeFormat:
 class TestRotateFiles:
     def test_cascade_rename(self, tmp_path):
         """log.csv -> log.csv.1, log.csv.1 -> log.csv.2, etc."""
-        (tmp_path / "log.csv").write_text("current")
-        (tmp_path / "log.csv.1").write_text("backup1")
-        (tmp_path / "log.csv.2").write_text("backup2")
+        (tmp_path / "log.csv").write_text("current", encoding="utf-8")
+        (tmp_path / "log.csv.1").write_text("backup1", encoding="utf-8")
+        (tmp_path / "log.csv.2").write_text("backup2", encoding="utf-8")
 
         RotatingRecordNode._rotate_files(tmp_path, "log.csv", max_count=5)
 
         assert not (tmp_path / "log.csv").exists()
-        assert (tmp_path / "log.csv.1").read_text() == "current"
-        assert (tmp_path / "log.csv.2").read_text() == "backup1"
-        assert (tmp_path / "log.csv.3").read_text() == "backup2"
+        assert (tmp_path / "log.csv.1").read_text(encoding="utf-8") == "current"
+        assert (tmp_path / "log.csv.2").read_text(encoding="utf-8") == "backup1"
+        assert (tmp_path / "log.csv.3").read_text(encoding="utf-8") == "backup2"
 
     def test_deletes_oldest_at_limit(self, tmp_path):
         """With max_count=3: log.csv + log.csv.1 + log.csv.2 max. Oldest deleted."""
-        (tmp_path / "log.csv").write_text("current")
-        (tmp_path / "log.csv.1").write_text("backup1")
-        (tmp_path / "log.csv.2").write_text("backup2")
+        (tmp_path / "log.csv").write_text("current", encoding="utf-8")
+        (tmp_path / "log.csv.1").write_text("backup1", encoding="utf-8")
+        (tmp_path / "log.csv.2").write_text("backup2", encoding="utf-8")
 
         RotatingRecordNode._rotate_files(tmp_path, "log.csv", max_count=3)
 
         # .2 was at limit (max_count-1=2), so deleted
         # .1 -> .2, current -> .1
         assert not (tmp_path / "log.csv").exists()
-        assert (tmp_path / "log.csv.1").read_text() == "current"
-        assert (tmp_path / "log.csv.2").read_text() == "backup1"
+        assert (tmp_path / "log.csv.1").read_text(encoding="utf-8") == "current"
+        assert (tmp_path / "log.csv.2").read_text(encoding="utf-8") == "backup1"
         assert not (tmp_path / "log.csv.3").exists()
 
     def test_no_files_exist(self, tmp_path):
@@ -767,7 +767,7 @@ def load_replay_file(node, loop, timeout=5.0):
 class TestReplayNodeCommentHandling:
     def test_csv_comment_lines_skipped(self, tmp_path):
         (tmp_path / "data.csv").write_text(
-            "# recorded metadata\ncol1,col2\n1.0,2.0\n# midway comment\n3.0,4.0\n"
+            "# recorded metadata\ncol1,col2\n1.0,2.0\n# midway comment\n3.0,4.0\n", encoding="utf-8"
         )
         node = make_replay_node(tmp_path, "data.csv", "f32,f32")
 
@@ -782,7 +782,7 @@ class TestReplayNodeCommentHandling:
         np.testing.assert_allclose(values[1], [2.0, 4.0])
 
     def test_csv_without_comments(self, tmp_path):
-        (tmp_path / "data.csv").write_text("col1,col2\n1.0,2.0\n3.0,4.0\n5.0,6.0\n")
+        (tmp_path / "data.csv").write_text("col1,col2\n1.0,2.0\n3.0,4.0\n5.0,6.0\n", encoding="utf-8")
         node = make_replay_node(tmp_path, "data.csv", "f32,f32")
 
         with background_event_loop() as loop:
@@ -796,7 +796,7 @@ class TestReplayNodeCommentHandling:
         np.testing.assert_allclose(values[1], [2.0, 4.0, 6.0])
 
     def test_csv_int_columns_with_comments(self, tmp_path):
-        (tmp_path / "data.csv").write_text("col1,col2\n1,2\n# comment\n3,4\n")
+        (tmp_path / "data.csv").write_text("col1,col2\n1,2\n# comment\n3,4\n", encoding="utf-8")
         node = make_replay_node(tmp_path, "data.csv", "i32,i32")
 
         with background_event_loop() as loop:
@@ -830,7 +830,7 @@ class TestReplayNodeCommentHandling:
 
     def test_clock_replays_past_comment_line(self, tmp_path):
         (tmp_path / "data.csv").write_text(
-            "col1,col2\n1.0,10.0\n2.0,20.0\n# midway comment\n3.0,30.0\n4.0,40.0\n"
+            "col1,col2\n1.0,10.0\n2.0,20.0\n# midway comment\n3.0,30.0\n4.0,40.0\n", encoding="utf-8"
         )
         node = make_replay_node(tmp_path, "data.csv", "f32,f32")
         dispatched = []

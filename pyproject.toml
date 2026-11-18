@@ -1,6 +1,6 @@
 [project]
 name = "nonoha-engine"
-version = "1.0.0"
+version = "1.1.0.dev0"
 description = "nonoha visual node engine"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE", "COMMERCIAL-LICENSE.md", "COMMERCIAL-LICENSE_ja.md"]
@@ -45,6 +45,14 @@ sci-nodes = { path = "./packages/sci-nodes" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# A text open() without an encoding uses the locale's on Windows (Python
+# before 3.15). Run the tests with PYTHONWARNDEFAULTENCODING=1 (CI does) and
+# each such call in the engine or the tests fails.
+filterwarnings = [
+  "error::EncodingWarning:nonoha_engine",
+  "error::EncodingWarning:test_",
+  "error::EncodingWarning:tests",
+]
 
 [dependency-groups]
 dev = [

@@ -186,7 +186,7 @@ class DataStorage:
         uploads_dir.mkdir(parents=True, exist_ok=True)
         target.parent.mkdir(parents=True, exist_ok=True)
         (uploads_dir / f"{new_upload_id}.tmp").touch()
-        with open(uploads_dir / f"{new_upload_id}.meta.json", "w") as f:
+        with open(uploads_dir / f"{new_upload_id}.meta.json", "w", encoding="utf-8") as f:
             json.dump(
                 {
                     "target_path": file_path,
@@ -223,7 +223,7 @@ class DataStorage:
         if not meta_path.exists():
             raise FileNotFoundError("Upload session not found")
 
-        with open(meta_path) as f:
+        with open(meta_path, encoding="utf-8") as f:
             meta = json.load(f)
         expected_size = meta["size"]
         overwrite = meta["overwrite"]

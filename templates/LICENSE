@@ -1,8 +1,8 @@
 The files in this directory (templates/) are licensed under the MIT No
 Attribution License (MIT-0) below, except files that state another license
-(templates/default/flows/default.vnf/app/nonoha-client.iife.js: Apache-2.0,
-see its .LICENSE.txt). Code you write from these templates is yours; MIT-0
-requires no attribution.
+(templates/default/flows/default.vnf/app/nonoha-client.iife.js and
+nonoha-views.iife.js: Apache-2.0, as stated in their first line). Code you
+write from these templates is yours; MIT-0 requires no attribution.
 
 MIT No Attribution
 

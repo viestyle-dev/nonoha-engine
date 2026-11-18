@@ -1,6 +1,7 @@
 from pathlib import Path
 import logging
 import importlib
+import importlib.resources
 import importlib.util
 import sys
 import json
@@ -12,6 +13,23 @@ from nonoha_core.node_registry import NodeRegistry
 logger = logging.getLogger(__name__)
 
 
+def _package_static_dir(module: Any) -> Optional[Path]:
+    """The ``static/`` folder inside a plugin's package (package data), when
+    it is a real folder: the same rule wherever the package was loaded from
+    (a plugin folder, site-packages, an app's bundle)."""
+    try:
+        root = importlib.resources.files(module)
+    except Exception:
+        root = None
+    if not isinstance(root, Path):
+        module_file = getattr(module, "__file__", None)
+        root = Path(module_file).parent if module_file else None
+    if root is None:
+        return None
+    static = root / "static"
+    return static if static.is_dir() else None
+
+
 class PluginHost:
     """
     Plugin host that manages plugin loading and lifecycle.
@@ -21,6 +39,33 @@ class PluginHost:
     def __init__(self):
         self._loaded_plugins: Dict[str, Any] = {}  # plugin_name -> module
         self._plugin_configs: List[Dict[str, Any]] = []
+        # Static folders (opaque to the engine): <package>/static, the
+        # plugin's package data, for built-in and folder plugins alike
+        self._plugin_info: Dict[str, Dict[str, Any]] = {}  # id -> info
+
+    def _record(self, plugin_id: str, name: str, builtin: bool, version: Optional[str], static_dir: Optional[Path]) -> None:
+        static = static_dir if static_dir is not None and static_dir.is_dir() else None
+        self._plugin_info[plugin_id] = {
+            "id": plugin_id,
+            "name": name,
+            "builtin": builtin,
+            "version": version,
+            "static_dir": static,
+        }
+
+    @staticmethod
+    def _read_version(pyproject: Path) -> Optional[str]:
+        try:
+            import tomllib
+
+            with open(pyproject, "rb") as f:
+                return tomllib.load(f).get("project", {}).get("version")
+        except Exception:
+            return None
+
+    def plugin_infos(self) -> List[Dict[str, Any]]:
+        """Loaded plugins: id, name, builtin, version, static_dir (Path or None)."""
+        return list(self._plugin_info.values())
 
     def load_builtin_plugins(
         self, builtin_plugins: Tuple[Any, ...], registry: NodeRegistry
@@ -91,6 +136,16 @@ class PluginHost:
                         logger.info(f"Skipping disabled plugin: {plugin_name}")
                         continue
 
+                    # Built into this app already: loading the folder too
+                    # would register the same node types again (and half
+                    # fail). Only a folder put there by hand gets here.
+                    built_in = self._plugin_info.get(plugin_name.replace("-", "_"))
+                    if built_in is not None and built_in["builtin"]:
+                        logger.warning(
+                            f"Skipping plugin folder {plugin_name}: the plugin is built into this app"
+                        )
+                        continue
+
                     # Check if plugin directory exists
                     plugin_dir = plugin_directory / plugin_name
                     if not plugin_dir.exists():
@@ -129,6 +184,25 @@ class PluginHost:
 
                 # Store loaded plugin for lifecycle management
                 self._loaded_plugins[plugin_name] = module
+
+                plugin_id = plugin_name.split(".")[0]
+                static_dir = _package_static_dir(module)
+                version = None
+                module_file = getattr(module, "__file__", None)
+                if module_file:
+                    source_root = Path(module_file).resolve().parent.parent
+                    # Installed from its plugin folder (a pyproject.toml next
+                    # to the package): the version is the folder's
+                    if (source_root / "pyproject.toml").is_file():
+                        version = self._read_version(source_root / "pyproject.toml")
+                if version is None:
+                    try:
+                        import importlib.metadata
+
+                        version = importlib.metadata.version(plugin_id.replace("_", "-"))
+                    except Exception:
+                        version = None
+                self._record(plugin_id, plugin_id.replace("_", "-"), True, version, static_dir)
 
                 logger.info(f"✓ Successfully loaded builtin plugin: {plugin_name}")
             else:
@@ -193,6 +267,13 @@ class PluginHost:
 
             # Store loaded plugin for lifecycle management
             self._loaded_plugins[plugin_name] = module
+            self._record(
+                module_folder_name,
+                plugin_name,
+                False,
+                self._read_version(plugin_dir / "pyproject.toml"),
+                _package_static_dir(module),
+            )
 
             logger.info(f"✓ Successfully loaded plugin: {plugin_name}")
 

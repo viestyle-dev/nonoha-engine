@@ -231,9 +231,9 @@ class RecordNode(BaseNode):
         try:
             match fmt:
                 case "csv":
-                    file = file_path.open("w", newline="")
+                    file = file_path.open("w", newline="", encoding="utf-8")
                 case "text":
-                    file = file_path.open("w")
+                    file = file_path.open("w", encoding="utf-8")
                 case _:
                     raise ValueError(f"Unknown format: {fmt}")
         except Exception as e:
@@ -523,7 +523,7 @@ class ReplayNode(BaseNode):
         try:
             suffix = file_path.suffix.lower()
             if suffix == ".csv":
-                df = pd.read_csv(file_path, comment="#")
+                df = pd.read_csv(file_path, comment="#", encoding="utf-8")
             elif suffix in [".xls", ".xlsx"]:
                 df = pd.read_excel(file_path, comment="#")
             else:
@@ -938,9 +938,9 @@ class RotatingRecordNode(BaseNode):
             is_new = not base_path.exists() or base_path.stat().st_size == 0
             match fmt:
                 case "csv":
-                    file = base_path.open("a", newline="")
+                    file = base_path.open("a", newline="", encoding="utf-8")
                 case "text":
-                    file = base_path.open("a")
+                    file = base_path.open("a", encoding="utf-8")
                 case _:
                     raise ValueError(f"Unknown format: {fmt}")
         except OSError as e:
@@ -978,7 +978,7 @@ class RotatingRecordNode(BaseNode):
                             if base_path.stat().st_size >= max_size_bytes:
                                 file.close()
                                 self._rotate_files(data_dir, file_name, max_count)
-                                file = base_path.open("w", newline="")
+                                file = base_path.open("w", newline="", encoding="utf-8")
                                 writer = csv.writer(file, lineterminator="\n")
                                 if headers:
                                     writer.writerow(headers)
@@ -1011,7 +1011,7 @@ class RotatingRecordNode(BaseNode):
                             if base_path.stat().st_size >= max_size_bytes:
                                 file.close()
                                 self._rotate_files(data_dir, file_name, max_count)
-                                file = base_path.open("w")
+                                file = base_path.open("w", encoding="utf-8")
                                 if headers:
                                     file.write(headers[0] + "\n")
                                     file.flush()

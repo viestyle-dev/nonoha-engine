@@ -33,11 +33,18 @@ from nonoha_engine.node_flow.nodes import (
 
 # import nonoha_engine.webrtc_gateway.router
 
+from nonoha_core.inspection import PROTOCOL_VERSION as INSPECTOR_PROTOCOL_VERSION
+
+from .node_flow.inspector_ws import InspectorHost
+from . import env_file
+from .env_settings import EnvSettings
+from .node_flow.catalog import catalog as build_catalog
 from .plugin_management.plugin_host import PluginHost
+from .request_guard import RequestGuard, is_loopback_bind, is_public_name
 from .runtime_config import RuntimeConfig
 
 
-__version__ = "1.0.0"
+__version__ = "1.1.0.dev0"
 
 logger = logging.getLogger(__name__)
 
@@ -71,8 +78,7 @@ def _set_process_priority_windows():
     # --- Disable CPU execution speed throttling (Windows 11+) ---
     # Windows 11 applies EcoQoS (CPU frequency reduction / E-core scheduling)
     # to processes without visible windows. When the engine is launched with
-    # CREATE_NO_WINDOW (e.g. from a GUI host app like nonoha-hub), this
-    # throttling degrades asyncio event loop responsiveness and WebSocket
+    # CREATE_NO_WINDOW (no console window), this throttling degrades asyncio event loop responsiveness and WebSocket
     # throughput. Explicitly opting out ensures consistent CPU performance.
     class PROCESS_POWER_THROTTLING_STATE(ctypes.Structure):
         _fields_ = [
@@ -136,6 +142,63 @@ class AppStaticFiles(StaticFiles):
         return response
 
 
+_STATIC_MEDIA_TYPES = {
+    ".js": "text/javascript",
+    ".mjs": "text/javascript",
+    ".json": "application/json",
+    ".css": "text/css",
+    ".svg": "image/svg+xml",
+    ".wasm": "application/wasm",
+}
+
+
+class PluginStaticFiles(StaticFiles):
+    """A plugin's static folder, served as-is (the engine never reads it).
+
+    Media types are fixed for script-like files: on Windows the registry can
+    map .js to text/plain, which browsers refuse for ES modules.
+    """
+
+    def file_response(self, full_path, stat_result, scope, status_code=200):
+        request_headers = Headers(scope=scope)
+        media_type = _STATIC_MEDIA_TYPES.get(pathlib.Path(str(full_path)).suffix.lower())
+        response = FileResponse(
+            full_path, status_code=status_code, stat_result=stat_result, media_type=media_type
+        )
+        response.headers["Cache-Control"] = "no-cache"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+
+        if self.is_not_modified(response.headers, request_headers):
+            return NotModifiedResponse(response.headers)
+        return response
+
+
+def _static_rev(static_dir: pathlib.Path) -> str:
+    """A cheap revision of a static folder, for cache-busting module URLs."""
+    newest = 0.0
+    for path in static_dir.rglob("*"):
+        try:
+            newest = max(newest, path.stat().st_mtime)
+        except OSError:
+            continue
+    return str(int(newest))
+
+
+def _engine_root(runtime_config: RuntimeConfig) -> pathlib.Path:
+    """The folder whose flows/, editor_html/ and plugins/ the engine uses
+    by default: ``RuntimeConfig.app_dir`` when the launcher states it, else
+    the folder of the program that was started."""
+    if runtime_config.app_dir:
+        return pathlib.Path(runtime_config.app_dir).resolve()
+    return pathlib.Path(sys.argv[0]).resolve().parent
+
+
+def _plugins_path(args, engine_root_path: pathlib.Path) -> pathlib.Path:
+    """``--plugins``, else ``<engine root>/plugins`` (read only when it holds
+    a manifest.json)."""
+    return pathlib.Path(args.plugins_path) if args.plugins_path else engine_root_path / "plugins"
+
+
 def _register_all_nodes(
     node_registry: NodeRegistry,
     plugin_host: PluginHost,
@@ -178,6 +241,11 @@ async def _generate_app(
     runtime_config: RuntimeConfig,
     plugins_path: pathlib.Path | None = None,
     editor_html_path: pathlib.Path | None = None,
+    inspector_enabled: bool = True,
+    allow_origins: tuple[str, ...] | None = None,
+    allow_hosts: tuple[str, ...] | None = None,
+    env_settings: EnvSettings | None = None,
+    lan_origins: bool = True,
 ) -> tuple[FastAPI, bool, bool]:  # Returns app, has_editor_html, has_app_html
 
     _register_all_nodes(node_registry, plugin_host, runtime_config, plugins_path)
@@ -189,12 +257,50 @@ async def _generate_app(
     @app.get("/")
     async def get_root():
         return {
-            "node_flow_url": "/node_flow",
+            "node_flow_url": "/node-flow",
         }
 
-    app.include_router(
-        nonoha_engine.node_flow.router.generate_router(node_flow_instance)
+    plugins = []
+    for info in plugin_host.plugin_infos():
+        static_dir = info["static_dir"]
+        plugins.append({
+            "id": info["id"],
+            "name": info["name"],
+            "builtin": info["builtin"],
+            "version": info["version"],
+            "static": f"/plugins/{info['id']}/static/" if static_dir is not None else None,
+            "rev": _static_rev(static_dir) if static_dir is not None else None,
+        })
+
+    inspector_host = InspectorHost(
+        node_flow_instance,
+        inspector_enabled,
+        plugins=[{"id": p["id"], "name": p["name"], "version": p["version"]} for p in plugins],
     )
+    capabilities = {
+        "engine": __version__,
+        "inspector": {"enabled": inspector_enabled, "protocol": INSPECTOR_PROTOCOL_VERSION},
+        "plugin_static": True,
+        "env_settings": env_settings is not None,
+    }
+
+    app.include_router(
+        nonoha_engine.node_flow.router.generate_router(
+            node_flow_instance,
+            inspector_host=inspector_host,
+            capabilities=capabilities,
+            plugins=plugins,
+            env_settings=env_settings,
+        )
+    )
+
+    for info in plugin_host.plugin_infos():
+        if info["static_dir"] is not None:
+            app.mount(
+                f"/plugins/{info['id']}/static",
+                PluginStaticFiles(directory=info["static_dir"]),
+                name=f"plugin-static-{info['id']}",
+            )
 
     # app.include_router(nonoha_engine.webrtc_gateway.router.generate_router())
 
@@ -215,12 +321,22 @@ async def _generate_app(
             name="app",
         )
 
+    # Cross-origin callers (the dev editor on another port, another engine's
+    # editor) need CORS headers. No cookies or other credentials are used, so
+    # "*" without credentials is enough; RequestGuard, added last and thus
+    # outermost, has already turned away origins that are not allowed.
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_credentials=True,
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
+    )
+    app.add_middleware(
+        RequestGuard,
+        allow_origins=allow_origins if allow_origins is not None else runtime_config.allow_origins,
+        allow_hosts=allow_hosts if allow_hosts is not None else runtime_config.allow_hosts,
+        lan_origins=lan_origins,
     )
 
     return app, has_editor_html, has_app_html
@@ -230,7 +346,7 @@ def command_fbc(args):
     from nonoha_engine.file_binary_converts import file_binary_converts
 
     if args.command == "encode":
-        with open(args.input_file, "r") as f:
+        with open(args.input_file, "r", encoding="utf-8") as f:
             text = f.read()
 
         # start_time = time.time()
@@ -243,7 +359,7 @@ def command_fbc(args):
         with open(args.input_file, "rb") as f:
             data = f.read()
         decoded = file_binary_converts.decode(data)
-        with open(args.output_file, "w") as f:
+        with open(args.output_file, "w", encoding="utf-8") as f:
             f.write(decoded)
 
 
@@ -252,50 +368,40 @@ async def command_catalog(runtime_config: RuntimeConfig, args):
     node_registry = NodeRegistry()
     plugin_host = PluginHost()
 
-    plugins_path = (
-        pathlib.Path(args.plugins_path) if args.plugins_path is not None else None
+    _register_all_nodes(
+        node_registry, plugin_host, runtime_config, _plugins_path(args, _engine_root(runtime_config))
     )
 
-    _register_all_nodes(node_registry, plugin_host, runtime_config, plugins_path)
-
-    # Serialize catalog in the same format as GET /node-flow/catalog/nodes
-    catalog = []
-    for defn in node_registry.node_definitions.values():
-        m = defn.metadata
-        catalog.append(
-            {
-                "type": defn.type_name,
-                "description": m.description,
-                "category": m.category,
-                "inputs": [
-                    {
-                        "name": p.name, "description": p.description, "types": p.value_types,
-                        **({"value_names": p.value_names} if any(n is not None for n in p.value_names) else {}),
-                    }
-                    for p in m.inputs
-                ],
-                "outputs": [
-                    {
-                        "name": p.name, "description": p.description, "types": p.value_types,
-                        **({"value_names": p.value_names} if any(n is not None for n in p.value_names) else {}),
-                    }
-                    for p in m.outputs
-                ],
-                "properties": {
-                    name: {"default": prop.default, "description": prop.description}
-                    for name, prop in m.properties.items()
-                },
-            }
-        )
+    # Same shape as GET /node-flow/catalog/nodes
+    catalog = build_catalog(node_registry)
 
     output_path = pathlib.Path(args.output)
-    output_path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2))
+    output_path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
     print(
         f"Catalog written to {output_path} ({len(catalog)} nodes)", file=sys.stderr
     )
 
     # Finalize plugins to ensure proper C++ extension cleanup
     await plugin_host.finalize()
+
+
+def _warn_exposure(bind_host: str, allow_hosts: tuple[str, ...]) -> None:
+    """Say plainly when the engine can be reached and edited from elsewhere.
+
+    The engine has no authentication: whoever reaches it can edit graphs and
+    so run code. Behavior is unchanged; this only makes the exposure visible.
+    """
+    if bind_host not in ("127.0.0.1", "localhost", "::1"):
+        logging.warning(
+            f"Listening on {bind_host}: anyone on the same network can edit graphs "
+            "and run code on this machine (the engine has no login)."
+        )
+    public = [h for h in allow_hosts if is_public_name(h)]
+    if public:
+        logging.warning(
+            f"Allowed public host names ({', '.join(public)}): through a public tunnel, "
+            "anyone who knows the URL can edit graphs and run code on this machine."
+        )
 
 
 def stdin_monitor(command_queue: queue.Queue, shutdown_event: threading.Event):
@@ -406,6 +512,40 @@ async def main(runtime_config: RuntimeConfig):
         help="Read-only mode: changes are not persisted to disk",
     )
 
+    parser.add_argument(
+        "--inspector",
+        choices=["on", "off"],
+        default=None,
+        help="Inspector WebSocket endpoint for live port sampling (default: on unless the build turned it off)",
+    )
+
+    parser.add_argument(
+        "--allow-host",
+        action="append",
+        default=[],
+        metavar="NAME",
+        help="Accept this Host name (tunnels, VPN or company DNS names; a leading dot also allows subdomains, e.g. .ngrok-free.app). Repeatable",
+        dest="allow_hosts",
+    )
+
+    parser.add_argument(
+        "--allow-origin",
+        action="append",
+        default=[],
+        metavar="ORIGIN",
+        help="Accept requests from pages at this origin (e.g. https://dash.example.com). Repeatable",
+        dest="allow_origins",
+    )
+
+    parser.add_argument(
+        "--env-file",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="The .env file with this deployment's environment values (default: the per-user folder of RuntimeConfig.app_id, else none)",
+        dest="env_file",
+    )
+
     subparsers = parser.add_subparsers(dest="subparser")
 
     if runtime_config.includes_fbc_commands:
@@ -487,7 +627,7 @@ async def main(runtime_config: RuntimeConfig):
     if runtime_config.auto_set_process_priority:
         _set_process_priority()
 
-    engine_root_path = pathlib.Path(sys.argv[0]).parent
+    engine_root_path = _engine_root(runtime_config)
 
     # Resolve editor_html path: CLI argument takes priority, fallback to engine_root_path/editor_html
     if args.editor_html_path is not None:
@@ -506,6 +646,15 @@ async def main(runtime_config: RuntimeConfig):
 
     logging.info(f"Process ID: {os.getpid()}")
 
+    # Environment values: the .env goes into os.environ now, once, before
+    # plugins load and before any thread starts (setenv is not thread-safe).
+    # Later changes only swap nonoha_core.environment's snapshot.
+    env_settings = EnvSettings(
+        env_file.resolve(args.env_file or runtime_config.env_file, runtime_config.app_id),
+        readonly=args.readonly,
+    )
+    env_settings.load_into_process()
+
     node_registry = NodeRegistry()
     node_flow_instance = nonoha_engine.node_flow.node_flow.NodeFlow(node_registry)
     node_flow_instance.readonly = args.readonly
@@ -513,6 +662,18 @@ async def main(runtime_config: RuntimeConfig):
         logging.info("Read-only mode enabled")
 
     plugin_host = PluginHost()
+    inspector_enabled = (
+        runtime_config.inspector_enabled if args.inspector is None else args.inspector == "on"
+    )
+    logging.info(f"Inspector: {'on' if inspector_enabled else 'off'}")
+
+    allow_hosts = tuple(runtime_config.allow_hosts) + tuple(args.allow_hosts)
+    allow_origins = tuple(runtime_config.allow_origins) + tuple(args.allow_origins)
+    if allow_hosts:
+        logging.info(f"Allowed host names: {', '.join(allow_hosts)}")
+    if allow_origins:
+        logging.info(f"Allowed origins: {', '.join(allow_origins)}")
+    _warn_exposure(args.host, allow_hosts)
 
     # Create command queue and shutdown event for stdin monitoring
     command_queue = queue.Queue()
@@ -536,8 +697,13 @@ async def main(runtime_config: RuntimeConfig):
             pathlib.Path(args.vnf_file_path),
             plugin_host,
             runtime_config,
-            pathlib.Path(args.plugins_path) if args.plugins_path else None,
+            _plugins_path(args, engine_root_path),
             editor_html_path=editor_html_path,
+            inspector_enabled=inspector_enabled,
+            allow_origins=allow_origins,
+            allow_hosts=allow_hosts,
+            env_settings=env_settings,
+            lan_origins=not is_loopback_bind(args.host),
         )
         config = uvicorn.Config(
             app,
@@ -582,7 +748,7 @@ async def main(runtime_config: RuntimeConfig):
             f"  • Binding: http://{server_uri}\n"
             + (
                 f"─────────────────────────────────────────────\n"
-                f"Inspector GUI:\n"
+                f"Editor:\n"
                 f"  • http://{inspector_uri}/editor?engine-uri={inspector_uri}\n"
                 if has_editor_html
                 else ""
@@ -654,7 +820,23 @@ async def main(runtime_config: RuntimeConfig):
     # sys.exit(0)
 
 
+def _utf8_stdio() -> None:
+    """The engine reads and writes UTF-8 on its standard streams.
+
+    Python 3.11 uses the locale's encoding when a stream is a pipe (cp1252,
+    cp932 on Windows): a host reading the output as UTF-8 would see garbled
+    text, and print() could fail on a character the code page lacks. A
+    stream that is missing (a windowed build) or cannot be reconfigured is
+    left alone.
+    """
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def run(runtime_config: RuntimeConfig):
+    _utf8_stdio()
     loop = asyncio.get_event_loop()
 
     try:

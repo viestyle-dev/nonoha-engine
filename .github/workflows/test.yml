@@ -36,6 +36,9 @@ jobs:
 
       - name: Run tests
         shell: bash
+        env:
+          # Every text open() without an encoding fails (pyproject filterwarnings)
+          PYTHONWARNDEFAULTENCODING: "1"
         run: |
           uv run pytest tests --tb=short -s
 
@@ -45,8 +48,9 @@ jobs:
         include:
           #   - os: windows-2022
           #     target: windows
-          # macOS (arm64 arch)
-          - os: macos-14
+          # macOS (Apple Silicon). Pinned rather than macos-latest so a runner
+          # image change is a deliberate edit (macos-14 was retired 2026-11-02)
+          - os: macos-15
             target: macos-arm64
 
     runs-on: ${{ matrix.os }}

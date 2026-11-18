@@ -1,0 +1,41 @@
+{
+  "sdk": 1,
+  "views": [
+    {
+      "id": "spectrum-bars",
+      "title": "Spectrum bars",
+      "description": "Bar chart of the latest spectrum (one bar per bin).",
+      "module": "spectrum-bars.js",
+      "inputs": [
+        {
+          "name": "spectrum",
+          "accepts": [
+            "f32",
+            "f32[?]",
+            "f64[?]"
+          ],
+          "delivery": "latest",
+          "description": "Magnitudes per bin"
+        }
+      ],
+      "settings": {
+        "max": {
+          "type": "number",
+          "default": 1,
+          "min": 0,
+          "description": "Value at full height; 0 = the largest bin"
+        }
+      },
+      "size": {
+        "width": 320,
+        "height": 180
+      },
+      "suits": [
+        {
+          "node": "SpectrumAnalyzer",
+          "port": "spectrum"
+        }
+      ]
+    }
+  ]
+}

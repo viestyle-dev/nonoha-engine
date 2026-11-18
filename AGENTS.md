@@ -18,8 +18,8 @@ uv run main.py --vnf templates/default/flows/default.vnf --plugins ./templates/d
 # Install dependencies
 uv sync
 
-# Run tests
-uv run pytest tests -s
+# Run tests (as CI does: a text open() without encoding="utf-8" fails)
+PYTHONWARNDEFAULTENCODING=1 uv run pytest tests -s
 
 # Generate node catalog (JSON)
 uv run main.py catalog
@@ -33,11 +33,12 @@ Custom App: `http://localhost:8000/app`
 
 1. **All data flows as numpy arrays with batch dimension** — scalar `5.0` → `np.array([5.0])` shape `(1,)`
 2. **`dispatch()` values must include batch dimension** — if port type is `f32[N]` (ndim=1), dispatched array must be shape `(batch, N)` i.e. ndim=2. Add `[np.newaxis]` to prepend batch dim. This is auto-validated during `pytest` via the `nonoha_core._testing` plugin.
-3. **`__init__()` must be side-effect-free** — no asyncio, no I/O, no network. Use `activate()` for runtime
-4. **Port names cannot contain**: `.` (dot), `-` (hyphen), `$` (dollar) — reserved delimiters
-5. **Always call `notify_node_updated()`** after modifying ports in `set_properties()`
-6. **Python 3.11 only** — 3.12+ is not supported
-7. **Use `catalog` subcommand to discover nodes** — do NOT scan source files manually
+3. **Dispatched values are valid during the dispatch only** — a sender may reuse its output buffer every dispatch (write with `out=` into arrays allocated once); a node that keeps a received value past its callback must copy it (`values[0].copy()`)
+4. **`__init__()` must be side-effect-free** — no asyncio, no I/O, no network. Use `activate()` for runtime
+5. **Port names cannot contain**: `.` (dot), `-` (hyphen), `$` (dollar) — reserved delimiters
+6. **Always call `notify_node_updated()`** after modifying ports in `set_properties()`
+7. **Python 3.11 only** — 3.12+ is not supported
+8. **Use `catalog` subcommand to discover nodes** — do NOT scan source files manually
 
 ## Node Catalog
 
@@ -61,6 +62,7 @@ uv run main.py --plugins ./templates/default/plugins catalog -o catalog.json
 ## Common Pitfalls
 
 - **Clock node requires `enabled=true`** to start emitting time values. It does NOT auto-start. You must send `true` to its `enabled` input port (e.g., via a graph input connected from the app, or a RealNumberValue node).
+- **Times are f64** (Clock, TickClock, SystemTime): a float32 time is coarser than a sample after hours at 600 Hz (about a minute at 192 kHz). Declare time inputs as f64: f32 senders still connect to them, but an f64 sender cannot connect to an f32 input.
 - **Stopping the engine**: Send `quit` to the engine's stdin for graceful shutdown. When running in background, use a named pipe:
 
 ```bash
@@ -83,11 +85,13 @@ taskkill //PID <PID> //F
 ```
 plugins/
 ├── manifest.json                 # Plugin registry
-└── my_plugin/                    # Plugin directory (underscores)
+└── my-plugin/                    # Plugin directory (hyphens)
     ├── pyproject.toml            # Package metadata
-    └── my_plugin/                # Python package (same name)
+    └── my_plugin/                # Python package (underscores)
         ├── __init__.py           # register_nodes(registry) — REQUIRED
-        └── nodes.py              # Node implementations
+        ├── nodes.py              # Node implementations
+        └── static/               # Optional web files (package data) — see "Plugin Static Files"
+            └── views/            # e.g. views for editors and apps (see the workspace's AGENTS.md)
 ```
 
 ### manifest.json
@@ -133,6 +137,181 @@ def register_nodes(registry: NodeRegistry):
 async def finalize():
     pass
 ```
+
+Optional: `register_portable_nodes(registry)` registers only the nodes that
+need no devices or desktop-only modules (no camera, audio device, ...). An
+embedded runtime (mobile, no FastAPI) calls it instead of `register_nodes`.
+Keep heavy or device imports out of the package's `__init__` top level.
+
+## Plugin Static Files (static/)
+
+A plugin can ship web files (e.g. views that editors and apps show) in a
+`static/` folder inside its Python package (package data): it goes wherever
+the package goes, so a plugin loaded from its folder, installed in
+site-packages or built into an app serves the same files, found next to its
+module (`importlib.resources`). Wheels contain it; a plugin that wants
+leaner wheels for runtimes without a browser (mobile) can exclude it in its
+own build settings. A builder that bundles plugins as code (an app built
+with PyInstaller) adds each package's `static/` as data next to the module.
+
+The engine serves the folder read-only at `/plugins/{plugin_id}/static/` (JS
+as `text/javascript`, `nosniff`, revalidated on every load) and lists it in
+`GET /node-flow/plugins` with a revision `rev` taken when the engine starts
+(for cache-busting URLs). The engine and Python code never look inside:
+ports stay plain arrays.
+
+What the files mean belongs to the hosts that load them. For views, see
+"Custom Views" in the workspace's AGENTS.md (from the workspace template).
+
+## Inspector (port monitoring)
+
+The engine samples port values for monitoring without changing the graph:
+`WS /node-flow/graphs/{graph}/inspector/ws` (implementation:
+`nonoha_core.inspection`, protocol 1). The editor uses it for port
+activity, peek, in-node previews and dashed connections.
+
+- Costs nothing while nobody watches; latest value only, never a queue.
+- A sample is taken during a dispatch, a tick before it is due and only when
+  it can be sent (credit left, budget for a frame its size): what it shows
+  was dispatched even when the sender reuses its buffer, and a dispatch
+  between samples copies nothing. A value that waited longer than its
+  interval is taken again, not sent. A new watch (and a snapshot) starts
+  from the port's current value, which a sender writing into its buffer
+  between dispatches can have changed. A frame's `t` is when its dispatch
+  was taken.
+- What a watch sends (the client's options; the first axis of a value is
+  its batch: one item per dispatch for an image `(1, H, W, 3)`, many for an
+  audio block `(512, channels)`):
+  - `batch`: the last item, all items of the latest dispatch, the last N,
+    or `since` (every item since the last sample; the frame flags a gap when
+    some were lost)
+  - `slice`, `cast` (complex values are sent as their magnitude)
+  - `max_bytes`: one sample's data, every slot together (default 256 KiB,
+    at most 4 MiB). Too many items: the newest that fit are kept. One item
+    too large: the `auto_stride` dimensions are strided, every slot by one
+    step (frames carry dimensions as u16: none over 65535). Still too large:
+    nothing is sent, the client gets the error `too_large` once (until a
+    sample fits again).
+- Bounded: per-session byte budget (a frame that does not fit waits, smaller
+  ones go on), at most 2 unacknowledged frames (a client that acknowledges
+  nothing for 5 s is disconnected with close code 4408 and reconnects),
+  intervals widen when sampling takes too much CPU, and it pauses itself
+  when the event loop lags (resumes when it recovers, or on the client's
+  `force_resume`; `pause`/`resume` only stop and restart one session's
+  stream, e.g. a hidden tab: nothing is taken for it meanwhile).
+- Sampled values can miss updates; values an app relies on go through
+  `$output` ports.
+- `--inspector on|off` (default on); `GET /node-flow/capabilities` reports
+  `{"engine", "inspector": {"enabled", "protocol"}, "plugin_static", "env_settings"}`.
+- Client: `NonohaClient.InspectorClient` (nonoha-client-js).
+
+## Engine Root Layout
+
+The folder of the app the engine runs in (its *root*) holds the files that
+ship with it; each is found there unless an argument names it:
+
+```
+<root>/
+  flows/default.vnf     --vnf
+  editor_html/          --editor-html
+  plugins/              --plugins (read when it holds a manifest.json)
+```
+
+The root is `RuntimeConfig.app_dir` when the launcher states it, else the
+folder of the program that was started (`sys.argv[0]`). A launcher that can
+be started by name from `PATH` (where `argv[0]` is a bare name) states it, so
+the engine never reads flows or plugins from the current directory. The
+`.env` is not part of the root (see below).
+
+## Environment Values (API keys and per-machine settings)
+
+Values that belong to a deployment, not to the graph: API keys, a provider
+URL. The graph stores only the *name* (e.g. a property `api_key_env =
+"GEMINI_API_KEY"`); the value comes from the machine.
+
+```python
+from nonoha_core import environment
+from nonoha_core.node import EnvDoc, NodeDoc
+
+class MyApiNode(BaseNode):
+    @classmethod
+    def describe(cls, properties=None):
+        name = str((properties or {}).get("api_key_env") or "MY_API_KEY")
+        return NodeDoc(
+            description="...",
+            env=(EnvDoc(name, "API key for My Service", "https://example.com/keys"),),
+        )
+
+    def _send(self):
+        key = environment.get(str(self.properties["api_key_env"]) or "MY_API_KEY")
+        if not key:
+            ...  # report "MY_API_KEY is not set" on an error output; keep running
+```
+
+- **Read when used, never keep**: call `environment.get(name)` at the moment
+  of use (each request, each reconnect). A value set while the engine runs
+  then applies to the next request; there are no change notifications.
+- **Declare** every name in `describe(properties)` (`NodeDoc.env`): the
+  editor lists it, and the engine accepts values only for declared names.
+- **Never** put a value in a property, a port, a log line or an error text
+  (mask it: `message.replace(key, "***")`).
+- Where values come from: a `.env` (loaded into `os.environ` at start;
+  never published, exported or built), the OS environment (it wins over
+  `.env`), and values set while running (the editor's Environment settings;
+  `GET/PUT/DELETE /node-flow/env`, which never return values).
+- Which `.env`: only the one the launcher names. `--env-file PATH`
+  (`RuntimeConfig.env_file`): a workspace's `<workspace>/.env` (nonoha Hub
+  and `nonoha ws run` pass it; started by hand, add `--env-file .env`).
+  `RuntimeConfig.app_id`: an app's per-user `.env`, never next to the
+  executable:
+  - Windows: `%LOCALAPPDATA%\nonoha\apps\<app_id>\.env`
+  - macOS: `~/Library/Application Support/nonoha/apps/<app_id>/.env`
+  - Linux and others: `~/.config/nonoha/apps/<app_id>/.env` (not
+    `$XDG_CONFIG_HOME`: the place must not depend on how the app was
+    started)
+
+  Otherwise there is no `.env`. A file that cannot be read (not UTF-8, a
+  folder) is reported and left untouched; the engine starts without it.
+  `--readonly` never changes it.
+- Names that steer processes or libraries (`PATH`, `*_PROXY`, `PYTHON*`,
+  `SSL_*`, `NONOHA_*`, ...) cannot be written by clients; libraries' own
+  settings (proxy, certificates, `OMP_NUM_THREADS`) belong in the OS
+  environment or `.env` by hand. Settings read when numpy loads must be set
+  in the OS environment.
+
+### Per-machine property values
+
+Whether a value differs per machine (a camera index, an audio device)
+depends on the use case, so nodes do not decide it. Make it a **graph
+property**, feed it to the node's `@property` port with a
+`GraphPropertiesChanged` node, and let the app or host set the graph
+property (`PATCH /node-flow/graphs/{graph}/properties`; the embedded runtime
+uses `update_graph_properties`). A built app's or kiosk's graph.json is that
+deployment's own copy.
+
+## Access from Browsers and Other Machines
+
+The engine has no login: whoever reaches it can edit graphs and run code.
+
+- It refuses requests from other web sites (CSRF) and from rebound host
+  names (DNS rebinding): `Origin` must be the same origin or loopback, or,
+  when the engine listens on the network (`--host` not loopback), a
+  private-network address or a `.local`/single-label name; only web origins
+  (http, https, ws, wss) count, so browser extensions and webviews need
+  `--allow-origin`. `Host` must be an IP address, `localhost`, a
+  single-label or `.local` name, or this machine's name. Same-machine use,
+  LAN use (`--host 0.0.0.0`), the dev editor on another port, SSH
+  forwarding and VPN IPs need nothing.
+- On loopback (the default `127.0.0.1`), pages served from the LAN (a
+  captive portal, a router's admin page) are refused: through this
+  machine's browser they could otherwise reach an engine nothing on the
+  LAN can.
+- Tunnels, VPN host names and company DNS names: `--allow-host NAME`
+  (repeatable; `.example.com` also allows subdomains). Pages on other sites:
+  `--allow-origin https://dash.example.com`. Built apps:
+  `RuntimeConfig(allow_hosts=(...), allow_origins=(...))`.
+- `--host 0.0.0.0` (or a public tunnel) lets anyone who reaches the port
+  edit graphs and run code on this machine.
 
 ## Node Implementation
 
@@ -385,9 +564,22 @@ Without this file, all nodes appear at default positions when opened in the edit
 ```
 
 Node type mapping:
-- Engine nodes → `"BasicEngineNode"`
+- Engine nodes → `"BasicEngineNode"`; optional `"preview": "<output>"` shows that output inside the node
 - Graph input/output ports → `"BasicPortNode"` (prefix `$input:` or `$output:`)
 - `$graph` → canvas dimensions (no `type` field)
+- Display/input nodes outside the graph → `"$editor:<Type>_<suffix>": {"type", "x", "y", "width"?, "height"?, "label"?, "data": {...}}`
+  (types, handle names and `data` settings: `editor_html/editor-nodes.json`; `nonoha ws catalog` writes it next to the catalog)
+- Waypoints → `"$wp:<id>": {"type": "WaypointNode", "x", "y"}` (relative to `$graph`)
+
+`editor_edges` entries are `{"source", "sourceHandle", "target", "targetHandle", "waypoints"?}`,
+keyed `<source>[:<handle>]-<target>[:<handle>]`:
+- `$output:<port>` → display node: solid edge, every value
+- engine node output → display node: dashed edge, sampled by the inspector
+- display/input node → `$input:<port>`
+- engine edges only need an entry to carry `waypoints`
+
+Lay graphs out left to right, keep display nodes outside the `$graph` frame,
+and route long edges through waypoints.
 
 ## Node Lifecycle
 
@@ -404,6 +596,13 @@ __init__()  →  [added to graph]  →  activate()  →  [running]  →  finaliz
 ```
 GET  /node-flow/graphs                              # List graphs
 GET  /node-flow/catalog/nodes                       # Node catalog
+GET  /node-flow/capabilities                        # Engine version and features (1.1+)
+GET  /node-flow/plugins                             # Loaded plugins (+ static path, rev)
+GET  /plugins/{plugin_id}/static/...                 # Plugin static files (views)
+WS   /node-flow/graphs/{graph}/inspector/ws         # Inspector (sampling, activity)
+GET    /node-flow/env                               # Environment value names and status (never values)
+PUT    /node-flow/env/{name}  {"value": "..."}       # Set a declared value (written to .env)
+DELETE /node-flow/env/{name}                         # Remove it
 
 POST   /node-flow/graphs/{graph}/nodes              # Create node
 DELETE /node-flow/graphs/{graph}/nodes/{node}        # Delete node
@@ -423,7 +622,9 @@ DELETE /node-flow/graphs/{graph}/edges/{edge}        # Disconnect
 | `packages/nonoha-core/src/nonoha_core/data_type.py` | DataType enum, PortValueType |
 | `packages/nonoha-core/src/nonoha_core/node_registry.py` | NodeRegistry |
 | `packages/nonoha-core/src/nonoha_core/nodes/` | Built-in node implementations |
+| `packages/nonoha-core/src/nonoha_core/inspection/` | Inspector (probes, budgets, sample frames) |
 | `nonoha_engine/node_flow/router.py` | REST/WebSocket API |
+| `nonoha_engine/node_flow/inspector_ws.py` | Inspector WebSocket host |
 | `nonoha_engine/node_flow/node.py` | WebSocket endpoint binary protocol |
 | `templates/default/` | Template workspace (plugins, app, graphs) |
 
