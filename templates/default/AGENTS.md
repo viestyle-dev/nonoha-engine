@@ -84,6 +84,12 @@ export default {
   history, events): every value from now on. `"latest"` is a state (an image,
   the current spectrum): the current value first, values in between may be
   skipped.
+- Values from an output port are whole. Values from an internal port (a
+  dashed edge, sampled by the inspector) fit a byte budget: a `"latest"`
+  input keeps the newest items, and an item too large arrives strided.
+  `ctx.onValues(input, (values, info) => …)` tells it: `info.steps` (per
+  value, the stride of each non-batch dimension; empty when whole) and
+  `info.gap` (items were lost before these).
 - `ctx.settings` arrive resolved: numbers kept within `min`..`max`, `enum`
   strings validated, defaults filled.
 - Draw only inside `ctx.requestFrame`, copy what you keep (values are valid

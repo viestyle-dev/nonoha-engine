@@ -71,6 +71,7 @@ var NonohaViews = (() => {
   }
 
   // src/host.ts
+  var WHOLE = Object.freeze({ steps: Object.freeze([]), gap: false });
   function resolveSetting(spec, value) {
     if (spec.type === "number") {
       const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() !== "" ? Number(value) : NaN;
@@ -159,12 +160,12 @@ var NonohaViews = (() => {
       report(error);
     }
     return {
-      deliver(input, values) {
+      deliver(input, values, info = WHOLE) {
         const list = listeners.get(input);
         if (!list) return;
         for (let i = 0; i < list.length; ++i) {
           try {
-            list[i](values);
+            list[i](values, info);
           } catch (error) {
             report(error);
           }
@@ -434,6 +435,7 @@ var NonohaViews = (() => {
   }
 
   // src/mount.ts
+  var GAP = 16;
   async function mountView(view, element, options) {
     const { bindings, outputs, samples } = options;
     for (const input in bindings) {
@@ -441,6 +443,7 @@ var NonohaViews = (() => {
       if (byPort ? !outputs : !samples) throw new Error(`binding "${input}" needs options.${byPort ? "outputs" : "samples"}`);
     }
     const definition = "mount" in view ? view : await loadView(view);
+    const report = options.onError ?? ((error) => console.error(`[view ${definition.id}]`, error));
     const rect = element.getBoundingClientRect();
     const host = createViewHost(definition, element, {
       theme: options.theme ?? defaultViewTheme(true),
@@ -463,11 +466,17 @@ var NonohaViews = (() => {
         continue;
       }
       const { watch, ...ref } = binding;
+      const info = { steps: [], gap: false };
       watches.push(
         samples.watch(ref, watch ?? watchOptionsFor(spec), {
           onSample: (sample) => {
-            if (sample.values) host.deliver(input, sample.values);
-          }
+            info.steps = sample.steps;
+            info.gap = (sample.flags & GAP) !== 0;
+            host.deliver(input, sample.values, info);
+          },
+          // e.g. too_large: the value does not fit the input's budget even reduced
+          onError: (code, message) => report(new Error(`${input}: ${message} (${code})`)),
+          onGone: () => report(new Error(`${input}: the port ${ref.node}.${ref.port} is gone`))
         })
       );
     }

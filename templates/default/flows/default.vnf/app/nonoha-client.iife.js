@@ -548,19 +548,22 @@ var NonohaClient = (() => {
   var InspectorCloseCode = {
     Disabled: 4403,
     NoGraph: 4404,
+    /** The engine ended the session: the client stopped reading or acknowledging (reconnects). */
+    Ended: 4408,
     TooMany: 4429
   };
   var FRAME_SAMPLE = 33;
   var HEADER_SIZE = 26;
+  var WATCH_ID_MAX = 65535;
   var SampleFlag = {
-    /** Strides were applied to fit max_bytes (see `steps`). */
+    /** Cut by `slice`, or to fit `maxBytes`: fewer items, or strides (see `steps`). */
     Reduced: 1,
-    /** The values hold every batch row since the last sample, not just the last. */
+    /** Every item of the dispatch (`batch: 'all'`), or of every dispatch since the last sample (`'since'`). */
     BatchAll: 2,
-    /** Values were cast (e.g. f64 to f32). */
+    /** Numbers converted: `cast`, or complex values sent as their magnitude. */
     Cast: 4,
-    /** Too large even after reduction: `values` is null. */
-    Truncated: 8
+    /** `batch: 'since'`: items were lost before this sample (the engine could not keep or send them all). */
+    Gap: 16
   };
   var NO_STEPS = [];
   var DEFAULT_INTERVAL_MS = 200;
@@ -672,7 +675,8 @@ var NonohaClient = (() => {
         this.setStatus({ state: "closed", reasons: [] });
         return;
       }
-      this.setStatus({ state: "connecting", reasons: code === InspectorCloseCode.TooMany ? ["too_many"] : [] });
+      const reasons = code === InspectorCloseCode.TooMany ? ["too_many"] : code === InspectorCloseCode.Ended ? ["ended"] : [];
+      this.setStatus({ state: "connecting", reasons });
       const delay = this.backoffMs;
       this.backoffMs = Math.min(MAX_BACKOFF_MS, this.backoffMs * 2);
       this.reconnectTimer = setTimeout(() => {
@@ -702,8 +706,11 @@ var NonohaClient = (() => {
       const key = watchKey(ref, options);
       let watch = this.watchesByKey.get(key);
       if (!watch) {
-        const id = this.nextWatchId;
-        this.nextWatchId = id >= 65535 ? 1 : id + 1;
+        let id = this.nextWatchId;
+        for (let tries = 0; this.watchesById.has(id) && tries < WATCH_ID_MAX; ++tries) {
+          id = id >= WATCH_ID_MAX ? 1 : id + 1;
+        }
+        this.nextWatchId = id >= WATCH_ID_MAX ? 1 : id + 1;
         watch = {
           id,
           key,
@@ -712,7 +719,7 @@ var NonohaClient = (() => {
           subscribers: [],
           intervalMs: Infinity,
           info: null,
-          sample: { watchId: id, frameSeq: 0, sampleSeq: 0, dispatchCount: 0, t: 0, flags: 0, steps: NO_STEPS, values: null },
+          sample: { watchId: id, frameSeq: 0, sampleSeq: 0, dispatchCount: 0, t: 0, flags: 0, steps: NO_STEPS, values: [] },
           previous: void 0
         };
         this.watchesByKey.set(key, watch);
@@ -818,9 +825,10 @@ var NonohaClient = (() => {
       return () => this.helloListeners.delete(listener);
     }
     sendActivity() {
+      const max = this._hello?.limits.max_activity_ports ?? Infinity;
       const ports = [];
       this.activityPorts.forEach(({ id, entry }) => {
-        ports.push({ id, node: entry.ref.node, dir: entry.ref.dir, port: entry.ref.port });
+        if (ports.length < max) ports.push({ id, node: entry.ref.node, dir: entry.ref.dir, port: entry.ref.port });
       });
       this.sendJson({ op: "activity", interval_ms: this.activityIntervalMs, ports });
     }
@@ -874,6 +882,7 @@ var NonohaClient = (() => {
             break;
           }
           this._hello = { protocol: message.protocol, limits: message.limits ?? {}, plugins: message.plugins ?? [] };
+          if (this.activityPorts.size > (this._hello.limits.max_activity_ports ?? Infinity)) this.sendActivity();
           this.engineStatus = { state: "ok", reasons: [] };
           this.setStatus(this.hidden ? { state: "hidden", reasons: [] } : this.engineStatus);
           const hello = this._hello;
@@ -926,25 +935,21 @@ var NonohaClient = (() => {
       if (slots === 0) {
         sample.steps = NO_STEPS;
       } else {
-        const steps = new Array(slots);
+        let steps = sample.steps;
+        if (steps === NO_STEPS || steps.length !== slots) steps = sample.steps = new Array(slots);
         for (let s = 0; s < slots; ++s) {
           const n = view.getUint8(offset++);
-          const dims = new Array(n);
+          let dims = steps[s];
+          if (!dims || dims.length !== n) dims = steps[s] = new Array(n);
           for (let d = 0; d < n; ++d) {
             dims[d] = view.getUint16(offset);
             offset += 2;
           }
-          steps[s] = dims;
         }
-        sample.steps = steps;
       }
-      if (flags & SampleFlag.Truncated) {
-        sample.values = null;
-      } else {
-        const [values] = parsePortValuesBytes(view, offset, watch.previous);
-        watch.previous = values;
-        sample.values = values;
-      }
+      const [values] = parsePortValuesBytes(view, offset, watch.previous);
+      watch.previous = values;
+      sample.values = values;
       const subscribers = watch.subscribers;
       for (let i = 0; i < subscribers.length; ++i) subscribers[i].callbacks.onSample(sample);
     }

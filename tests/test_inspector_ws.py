@@ -220,7 +220,29 @@ class _Socket:
         self.sent.append(bytes(data))
 
     async def close(self, code=1000):
+        if not self.closed:  # the first close is the one the client sees
+            self.close_code = code
         self.closed = True
+
+
+class _SilentSocket(_Socket):
+    """A client that sends ``texts``, then neither reads nor acknowledges: its
+    receive returns only when the server closes the connection."""
+
+    def __init__(self, texts):
+        super().__init__(texts)
+        self._closed = asyncio.Event()
+
+    async def receive(self):
+        await asyncio.sleep(0)
+        if self._texts:
+            return {"type": "websocket.receive", "text": self._texts.pop(0)}
+        await self._closed.wait()
+        return {"type": "websocket.disconnect"}
+
+    async def close(self, code=1000):
+        await super().close(code)
+        self._closed.set()
 
 
 def _graph_flow():
@@ -248,14 +270,16 @@ def _graph_flow():
 def test_operations_after_close_leave_nothing_subscribed():
     from nonoha_engine.node_flow.inspector_ws import InspectorHost
 
-    host = InspectorHost(_graph_flow(), enabled=True)
+    flow = _graph_flow()
+    host = InspectorHost(flow, enabled=True)
     socket = _Socket([
         json.dumps({"op": "close"}),
         json.dumps({"op": "watch", "id": 1, "node": "Source_1", "port": "out", "batch": "since"}),
         json.dumps({"op": "activity", "ports": [{"id": 1, "node": "Source_1", "port": "out"}]}),
     ])
     asyncio.run(host.handle(socket, "g"))
-    assert socket.closed and not host.inspector._probes and not host.inspector.sessions
+    port = flow.get_graph("g").get_node("Source_1").outputs["out"]
+    assert socket.closed and not host.inspector.sessions and not port._callback_keys
 
 
 def test_huge_numbers_get_an_error_reply_not_a_crash():
@@ -272,21 +296,28 @@ def test_huge_numbers_get_an_error_reply_not_a_crash():
     assert any(m.get("t") == "error" and m.get("code") == "bad_request" for m in socket.sent if isinstance(m, dict))
 
 
-def test_the_outbox_keeps_the_newest_activity_and_cuts_off_a_client_that_does_not_read():
+def test_the_outbox_merges_activity_keeps_the_newest_status_and_cuts_off_a_client_that_does_not_read():
     from nonoha_engine.node_flow.inspector_ws import Outbox, OutboxFull
 
     async def run():
         socket = _Socket([])
         outbox = Outbox(socket, limit=4)
         outbox.put({"t": "hello"})
-        outbox.put({"t": "activity", "n": 1})
+        # Activity rows are changes only: a round queued behind another must not lose its rows
+        outbox.put({"t": "activity", "ts": 1.0, "p": [[1, 10, 5.0], [2, 3, 1.0]]})
         outbox.put(bytearray(b"frame"))
-        outbox.put({"t": "activity", "n": 2})  # replaces n=1 in its place
-        outbox.put({"t": "status", "s": "ok"})
+        outbox.put({"t": "activity", "ts": 1.5, "p": [[1, 12, 4.0]]})
+        outbox.put({"t": "status", "state": "throttled"})
+        outbox.put({"t": "status", "state": "ok"})
         drain = asyncio.create_task(outbox.drain())
         await asyncio.sleep(0.01)
         drain.cancel()
-        assert socket.sent == [{"t": "hello"}, {"t": "activity", "n": 2}, b"frame", {"t": "status", "s": "ok"}]
+        assert socket.sent == [
+            {"t": "hello"},
+            {"t": "activity", "ts": 1.5, "p": [[1, 12, 4.0], [2, 3, 1.0]]},  # port 2's row is kept
+            b"frame",
+            {"t": "status", "state": "ok"},
+        ]
 
         stuck = Outbox(_Socket([]), limit=3)
         for i in range(3):
@@ -295,3 +326,23 @@ def test_the_outbox_keeps_the_newest_activity_and_cuts_off_a_client_that_does_no
             stuck.put({"t": "error", "i": 3})
 
     asyncio.run(run())
+
+
+def test_a_session_the_inspector_ends_closes_the_connection():
+    import numpy as np
+
+    from nonoha_core.inspection import Limits
+    from nonoha_engine.node_flow.inspector_ws import CLOSE_ENDED, InspectorHost
+
+    flow = _graph_flow()
+    port = flow.get_graph("g").get_node("Source_1").outputs["out"]
+    port.dispatch([np.ones((1,), np.float32)])  # a current value: the watch sends a sample at once
+    host = InspectorHost(flow, enabled=True, limits=Limits(ack_timeout_s=0.2))
+    socket = _SilentSocket([json.dumps({"op": "watch", "id": 1, "node": "Source_1", "port": "out"})])
+
+    async def run():
+        await asyncio.wait_for(host.handle(socket, "g"), 3.0)  # no ack, and no message after the watch
+
+    asyncio.run(run())
+    assert any(isinstance(m, bytes) for m in socket.sent)  # the sample went out
+    assert socket.close_code == CLOSE_ENDED and not host.inspector.sessions and not port._callback_keys

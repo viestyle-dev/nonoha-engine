@@ -171,16 +171,34 @@ The engine samples port values for monitoring without changing the graph:
 activity, peek, in-node previews and dashed connections.
 
 - Costs nothing while nobody watches; latest value only, never a queue.
-- A sample is taken during a dispatch, only when one is due (the first
-  dispatch after that, sent at the next tick): what it shows was dispatched
-  even when the sender reuses its buffer, and a dispatch between samples
-  copies nothing. A new watch (and a snapshot) starts from the port's
-  current value, which a sender writing into its buffer between dispatches
-  can have changed.
-- Bounded: per-session byte budget, at most 2 unacknowledged frames, and it
-  pauses itself when the event loop lags (resumes when it recovers, or on
-  the client's `force_resume`; `pause`/`resume` only stop and restart one
-  session's stream, e.g. a hidden tab).
+- A sample is taken during a dispatch, a tick before it is due and only when
+  it can be sent (credit left, budget for a frame its size): what it shows
+  was dispatched even when the sender reuses its buffer, and a dispatch
+  between samples copies nothing. A value that waited longer than its
+  interval is taken again, not sent. A new watch (and a snapshot) starts
+  from the port's current value, which a sender writing into its buffer
+  between dispatches can have changed. A frame's `t` is when its dispatch
+  was taken.
+- What a watch sends (the client's options; the first axis of a value is
+  its batch: one item per dispatch for an image `(1, H, W, 3)`, many for an
+  audio block `(512, channels)`):
+  - `batch`: the last item, all items of the latest dispatch, the last N,
+    or `since` (every item since the last sample; the frame flags a gap when
+    some were lost)
+  - `slice`, `cast` (complex values are sent as their magnitude)
+  - `max_bytes`: one sample's data, every slot together (default 256 KiB,
+    at most 4 MiB). Too many items: the newest that fit are kept. One item
+    too large: the `auto_stride` dimensions are strided, every slot by one
+    step (frames carry dimensions as u16: none over 65535). Still too large:
+    nothing is sent, the client gets the error `too_large` once (until a
+    sample fits again).
+- Bounded: per-session byte budget (a frame that does not fit waits, smaller
+  ones go on), at most 2 unacknowledged frames (a client that acknowledges
+  nothing for 5 s is disconnected with close code 4408 and reconnects),
+  intervals widen when sampling takes too much CPU, and it pauses itself
+  when the event loop lags (resumes when it recovers, or on the client's
+  `force_resume`; `pause`/`resume` only stop and restart one session's
+  stream, e.g. a hidden tab: nothing is taken for it meanwhile).
 - Sampled values can miss updates; values an app relies on go through
   `$output` ports.
 - `--inspector on|off` (default on); `GET /node-flow/capabilities` reports
