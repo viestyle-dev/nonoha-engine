@@ -76,26 +76,13 @@ class Outbox:
         client has stopped reading (the inspector then ends the session)."""
         if self._close_code is not None:
             return  # closing: nothing more goes out
-        if type(message) is dict:
-            kind = message.get("t")
-            if kind == "activity":
-                pending = self._latest.get("activity")
-                if pending is not None:
-                    # Rows are changes only: the pending message keeps its
-                    # place and takes the newer rows (the newest per port)
-                    rows = {row[0]: row for row in pending["p"]}
-                    for row in message["p"]:
-                        rows[row[0]] = row
-                    self._latest["activity"] = {**message, "p": list(rows.values())}
-                    return
-                self._latest["activity"] = message
-                message = "activity"  # a marker for the pending message of this kind
-            elif kind == "status":
-                pending = "status" in self._latest
-                self._latest["status"] = message
-                if pending:
-                    return  # its place in the order is kept; the newest is sent
-                message = "status"
+        kind = message.get("t") if type(message) is dict else None
+        if kind == "activity" or kind == "status":
+            pending = self._latest.get(kind)
+            self._latest[kind] = message if pending is None or kind == "status" else _merged_rows(pending, message)
+            if pending is not None:
+                return  # the pending one keeps its place in the order and goes out as the newest
+            message = kind  # a marker for the pending message of this kind
         if len(self._items) >= self._limit:
             self._items.clear()
             self._latest.clear()
@@ -117,10 +104,10 @@ class Outbox:
         items = self._items
         try:
             while True:
+                if self._close_code is not None and not items:
+                    await websocket.close(code=self._close_code)
+                    return
                 if not items:
-                    if self._close_code is not None:
-                        await websocket.close(code=self._close_code)
-                        return
                     self._ready.clear()
                     await self._ready.wait()
                     continue
@@ -135,6 +122,16 @@ class Outbox:
             pass
         except Exception as e:  # connection gone; the receive loop ends the session
             logger.debug("inspector sender stopped: %s", e)
+
+
+def _merged_rows(pending: dict, newer: dict) -> dict:
+    """Activity rows are changes only: the newer message with the pending
+    rows it does not replace (the newest row per port). Only a client that
+    reads slower than the rounds come gets here."""
+    rows = {row[0]: row for row in pending["p"]}
+    for row in newer["p"]:
+        rows[row[0]] = row
+    return {**newer, "p": list(rows.values())}
 
 
 class InspectorHost:
@@ -178,21 +175,15 @@ class InspectorHost:
                 try:
                     op = json.loads(text)
                 except ValueError:
-                    try:
-                        outbox.put({"t": "error", "code": "bad_json", "message": "control frames must be JSON"})
-                    except OutboxFull:
-                        break
-                    continue
-                if isinstance(op, dict):
-                    try:
-                        inspector.handle(session, op)
-                    except Exception:
-                        logger.exception("inspector operation failed; closing session")
-                        break
-                # A "close" operation ends the session; the loop ends with it.
-                # A session the inspector ends meanwhile (a client that stopped
-                # reading or acknowledging) is closed by the outbox, which ends
-                # the receive above.
+                    op = None
+                if type(op) is dict:
+                    inspector.handle(session, op)
+                else:
+                    inspector.reject(session, "bad_json", "control frames must be JSON objects")
+                # A "close" operation ends the session, and so the loop. A
+                # session the inspector ends (a client that stopped reading
+                # or acknowledging) is closed by the outbox, which ends the
+                # receive above.
         finally:
             inspector.close_session(session)
             sender.cancel()

@@ -296,6 +296,21 @@ def test_huge_numbers_get_an_error_reply_not_a_crash():
     assert any(m.get("t") == "error" and m.get("code") == "bad_request" for m in socket.sent if isinstance(m, dict))
 
 
+def test_unreadable_control_frames_get_an_error_reply():
+    from nonoha_engine.node_flow.inspector_ws import InspectorHost
+
+    host = InspectorHost(_graph_flow(), enabled=True)
+    socket = _Socket(["not json", "[1, 2]"])
+
+    async def run():
+        await host.handle(socket, "g")
+        await asyncio.sleep(0.05)  # let the sender drain
+
+    asyncio.run(run())
+    codes = [m.get("code") for m in socket.sent if isinstance(m, dict) and m.get("t") == "error"]
+    assert codes == ["bad_json", "bad_json"]
+
+
 def test_the_outbox_merges_activity_keeps_the_newest_status_and_cuts_off_a_client_that_does_not_read():
     from nonoha_engine.node_flow.inspector_ws import Outbox, OutboxFull
 
