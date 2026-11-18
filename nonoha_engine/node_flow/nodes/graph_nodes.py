@@ -239,10 +239,11 @@ class PortValuesSendNode(BaseNode):
             return
 
         # Create byte array with protocol format
+        name = target_port.encode()
         bytes_to_send = bytearray()
         bytes_to_send += EndpointEventType.EVENT_INPUT.value.to_bytes(1, "big")
-        bytes_to_send += len(target_port).to_bytes(1, "big")
-        bytes_to_send += target_port.encode()
+        bytes_to_send += len(name).to_bytes(1, "big")  # in bytes, as the receiver reads it
+        bytes_to_send += name
 
         try:
             # Serialize port values

@@ -192,7 +192,11 @@ class ProcessSupervisor:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 cwd=cwd or None,
-                text=True,
+                # The same on every OS: UTF-8, and a byte that is not UTF-8
+                # becomes U+FFFD instead of stopping the reader (which would
+                # leave the pipe full and the child blocked)
+                encoding="utf-8",
+                errors="replace",
                 **popen_kwargs,
             )
 

@@ -10,7 +10,8 @@ Grammar (a common dotenv subset; the Hub and CLI implement the same):
 
 Writes change only the line of one name, keep every other line, and go
 through a temporary file and ``os.replace`` so a crash never leaves a torn
-file. On POSIX the file is created ``0600``.
+file. On POSIX the file is created ``0600``. A write that changes nothing
+writes nothing; a symbolic link is followed (its target is replaced).
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 _LINE = re.compile(r"\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)")
@@ -26,7 +28,8 @@ APP_ID = re.compile(r"[A-Za-z0-9._-]+")
 
 
 class EnvFileError(Exception):
-    """The file could not be written (read-only file system, permissions)."""
+    """The file could not be read (not UTF-8, a folder, permissions) or
+    written (read-only file system, permissions)."""
 
 
 def _parse_value(raw: str) -> str:
@@ -73,13 +76,21 @@ def parse(text: str) -> dict[str, str]:
     return values
 
 
+def _read_text(path: Path) -> str:
+    """The file's text; "" when it does not exist."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
+    except UnicodeDecodeError:
+        raise EnvFileError(f"Cannot read {path}: not UTF-8 (save it as UTF-8)") from None
+    except OSError as e:
+        raise EnvFileError(f"Cannot read {path}: {e.strerror or e}") from None
+
+
 def read(path: Path) -> dict[str, str]:
     """The values in ``path``; empty when it does not exist."""
-    try:
-        text = path.read_text(encoding="utf-8")
-    except FileNotFoundError:
-        return {}
-    return parse(text)
+    return parse(_read_text(path))
 
 
 def quote(value: str) -> str:
@@ -103,20 +114,24 @@ def rewrite(text: str, name: str, value: str | None) -> str:
     return "\n".join(out) + "\n" if out else ""
 
 
-def write_value(path: Path, name: str, value: str | None) -> None:
-    """Set (or remove) one name in ``path`` atomically."""
+def write_value(path: Path, name: str, value: str | None) -> bool:
+    """Set (or remove) one name in ``path`` atomically; False when that
+    changes nothing (then nothing is written, nor any folder made)."""
+    if path.is_symlink():
+        path = path.resolve()
+    text = _read_text(path)  # a file that cannot be read is never overwritten
+    new_text = rewrite(text, name, value)
+    if new_text == text:
+        return False
     try:
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        try:
-            text = path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            text = ""
-        data = rewrite(text, name, value).encode("utf-8")
-        tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        # A new, uniquely named file (O_EXCL; 0600 on POSIX): never a
+        # leftover of a crashed writer, never shared with another writer
+        fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+        tmp = Path(tmp_name)
         try:
             with os.fdopen(fd, "wb") as f:
-                f.write(data)
+                f.write(new_text.encode("utf-8"))
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp, path)
@@ -126,14 +141,18 @@ def write_value(path: Path, name: str, value: str | None) -> None:
             except OSError:
                 pass
             raise
-        if sys.platform != "win32":
-            os.chmod(path, 0o600)
     except OSError as e:
         raise EnvFileError(f"Cannot write {path}: {e.strerror or e}") from None
+    return True
 
 
 def is_writable(path: Path) -> bool:
-    """Whether ``path`` can be written (or created) by this process."""
+    """Whether ``path`` can be written (or created) by this process.
+
+    On Windows ``os.access`` checks the read-only attribute, not the ACL: a
+    file it calls writable can still refuse the write, which then fails with
+    its reason (``EnvFileError``).
+    """
     if path.exists():
         return os.access(path, os.W_OK) and os.access(path.parent, os.W_OK)
     parent = path.parent
@@ -151,25 +170,21 @@ def per_user_dir() -> Path:
     elif sys.platform == "darwin":
         base = str(Path.home() / "Library" / "Application Support")
     else:
-        xdg = os.environ.get("XDG_CONFIG_HOME", "")
-        base = xdg if os.path.isabs(xdg) else str(Path.home() / ".config")
+        # Always ~/.config, not $XDG_CONFIG_HOME: set only in an interactive
+        # shell, it would move the keys depending on how the app was started
+        # (a terminal or a service). --env-file chooses another place.
+        base = str(Path.home() / ".config")
     return Path(base) / "nonoha" / "apps"
 
 
-def resolve(
-    explicit: str | None,
-    app_id: str | None,
-    vnf_path: Path,
-    frozen: bool,
-) -> Path | None:
+def resolve(explicit: str | None, app_id: str | None) -> Path | None:
     """The one ``.env`` this engine uses, or None.
 
     1. an explicit path (``--env-file``, ``RuntimeConfig.env_file``)
-    2. a built app: ``<per-user dir>/<app_id>/.env``, never next to the
-       executable (a zipped build would ship the user's keys)
-    3. development: the workspace root above the ``flows/`` folder holding
-       the VNF. The working directory is never searched, so starting the
-       engine elsewhere cannot pick up an unrelated ``.env``.
+    2. an app with ``app_id``: ``<per-user dir>/<app_id>/.env``, never next
+       to the executable (a zipped build would ship the user's keys)
+    3. otherwise none: the engine does not guess (a workspace's launcher
+       passes ``--env-file <workspace>/.env``)
     """
     if explicit:
         return Path(explicit).expanduser().resolve()
@@ -177,9 +192,4 @@ def resolve(
         if not APP_ID.fullmatch(app_id) or app_id in (".", ".."):
             raise ValueError(f"Invalid app_id {app_id!r}: use letters, digits, '.', '_' and '-'")
         return per_user_dir() / app_id / ".env"
-    if frozen:
-        return None
-    vnf = vnf_path.resolve()
-    if vnf.parent.name == "flows":
-        return vnf.parent.parent / ".env"
     return None

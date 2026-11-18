@@ -9,12 +9,20 @@ runs, for HTTP requests and WebSocket handshakes alike:
   literals, ``localhost``, ``*.localhost``, single-label names, ``*.local``,
   this machine's host name) or one the operator allowed.
 - ``Origin``, when present (browsers send it; other clients do not), must be
-  the same origin, a loopback or private-network origin, or one the operator
-  allowed.
+  the same origin, a loopback origin, a private-network origin when the
+  engine listens on the network (not on loopback only), or one the operator
+  allowed. Only web origins (http, https, ws, wss) are judged by their host;
+  any other scheme (browser extensions, webviews) needs an explicit
+  allowance.
 
 It does not authenticate anyone: same-machine use and LAN use (``--host
 0.0.0.0``) keep working without credentials. Established WebSocket frames
 are never inspected, so streaming costs nothing extra.
+
+An engine bound to loopback refuses pages from the local network: a browser
+on this machine could otherwise carry a LAN page's requests (a captive
+portal, a router's admin page) to an engine nothing on the LAN can reach,
+and the API can run commands (Process and script nodes).
 """
 
 from __future__ import annotations
@@ -49,6 +57,7 @@ _PRIVATE_NETWORKS = tuple(
 )
 
 _DEFAULT_PORTS = {"http": 80, "https": 443, "ws": 80, "wss": 443}
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 
 # Decisions are cached per distinct header value; a few clients send the
 # same values over and over. The cap bounds memory against junk headers.
@@ -115,6 +124,15 @@ def _split_patterns(values: Iterable[str]) -> tuple[frozenset[str], tuple[str, .
     return frozenset(exact), tuple(suffixes)
 
 
+def is_loopback_bind(host: str) -> bool:
+    """Whether the engine listens on loopback only (``--host``)."""
+    host = host.strip().lower().strip("[]")
+    if host in _LOOPBACK_HOSTS or _is_loopback_name(host):
+        return True
+    address = _ip(host)
+    return address is not None and address.is_loopback
+
+
 def is_public_name(host: str) -> bool:
     """Whether a Host allowance names something the internet can resolve."""
     host = host.strip().lower().lstrip(".").rstrip(".")
@@ -130,8 +148,12 @@ class RequestGuard:
         allow_origins: Iterable[str] = (),
         allow_hosts: Iterable[str] = (),
         own_names: Iterable[str] | None = None,
+        lan_origins: bool = True,
     ):
+        """``lan_origins``: accept private-network origins (false when the
+        engine listens on loopback only)."""
         self.app = app
+        self._lan_origins = lan_origins
         self._allow_origins = frozenset(o.strip().lower().rstrip("/") for o in allow_origins if o.strip())
         self._allow_hosts, self._allow_host_suffixes = _split_patterns(allow_hosts)
         if own_names is None:
@@ -199,11 +221,14 @@ class RequestGuard:
         scheme, sep, rest = origin.partition("://")
         if not sep:
             return False
-        if scheme == "tauri":  # the Hub's own window
-            return True
-        name, port = split_host(rest.split("/", 1)[0])
+        port = _DEFAULT_PORTS.get(scheme)
         if port is None:
-            port = _DEFAULT_PORTS.get(scheme)
+            # Not a web origin (chrome-extension://<id>, vscode-webview://...):
+            # its "host" is an opaque id, not a name to judge
+            return False
+        name, explicit_port = split_host(rest.split("/", 1)[0])
+        if explicit_port is not None:
+            port = explicit_port
 
         # Same origin: compared by name and port, not scheme, because a
         # tunnel or reverse proxy that terminates TLS turns https://x into
@@ -213,14 +238,16 @@ class RequestGuard:
             if name == host_name and (host_port is None or host_port == port):
                 return True
 
-        if _is_loopback_name(name) or _is_lan_name(name):
+        if _is_loopback_name(name):
             return True
         address = _ip(name)
-        if address is not None:
-            if address.is_loopback:
-                return True
-            return any(address in net for net in _PRIVATE_NETWORKS)
-        return False
+        if address is not None and address.is_loopback:
+            return True
+        if not self._lan_origins:
+            return False
+        if _is_lan_name(name):
+            return True
+        return address is not None and any(address in net for net in _PRIVATE_NETWORKS)
 
     @staticmethod
     def _remember(cache: dict, key: Any, value: bool) -> None:
@@ -246,13 +273,14 @@ class RequestGuard:
             hint = (
                 f"This engine does not accept the host name '{name}'.\n"
                 f"To allow it, start the engine with --allow-host {name} "
-                f"(or a leading dot for all subdomains, e.g. --allow-host .{name.partition('.')[2] or name}),\n"
-                f"or add it under 'Allowed host names' in the nonoha Hub start options.\n"
+                f"(or a leading dot for all subdomains, e.g. --allow-host .{name.partition('.')[2] or name};\n"
+                f"RuntimeConfig(allow_hosts=...) when the engine is started from Python).\n"
             )
         else:
             hint = (
                 f"This engine does not accept requests from pages at '{value}'.\n"
-                f"To allow that site, start the engine with --allow-origin {value}.\n"
+                f"To allow that site, start the engine with --allow-origin {value}\n"
+                f"(RuntimeConfig(allow_origins=...) when the engine is started from Python).\n"
             )
         body = hint.encode("utf-8")
         await send(

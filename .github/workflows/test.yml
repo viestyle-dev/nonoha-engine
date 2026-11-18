@@ -36,6 +36,9 @@ jobs:
 
       - name: Run tests
         shell: bash
+        env:
+          # Every text open() without an encoding fails (pyproject filterwarnings)
+          PYTHONWARNDEFAULTENCODING: "1"
         run: |
           uv run pytest tests --tb=short -s
 

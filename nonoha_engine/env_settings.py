@@ -59,12 +59,20 @@ def declared_env(node_flow: Any) -> dict[str, Declared]:
 
 
 class EnvSettings:
-    """The engine's ``.env``: loaded once at start, then changed by clients."""
+    """The engine's ``.env``: loaded once at start, then changed by clients.
 
-    def __init__(self, path: Path | None):
+    A write goes in three steps so the file I/O can leave the event loop:
+    ``require_write`` (checks, on the loop: it reads the declared names),
+    ``env_file.write_value`` (the file, in a thread), ``apply_write`` (what
+    nodes read, on the loop).
+    """
+
+    def __init__(self, path: Path | None, readonly: bool = False):
         self.path = path
+        self.readonly = readonly  # --readonly: the file is never changed
         self._from_file: set[str] = set()  # put into os.environ at start
         self._file_names: set[str] = set()  # defined in the file, as last read or written
+        self._read_error: str | None = None  # the file exists but could not be read
 
     def load_into_process(self) -> None:
         """At start, before plugins load and threads run: file -> os.environ.
@@ -74,7 +82,13 @@ class EnvSettings:
         if self.path is None:
             logger.info("Environment file: none")
             return
-        values = env_file.read(self.path)
+        try:
+            values = env_file.read(self.path)
+        except env_file.EnvFileError as e:
+            # The engine starts without it; the file is left untouched
+            self._read_error = str(e)
+            logger.warning(f"{e}: starting without its values")
+            return
         self._file_names = set(values)
         for name, value in values.items():
             if name in os.environ:
@@ -89,7 +103,12 @@ class EnvSettings:
         return name in os.environ and name not in self._from_file
 
     def file_is_writable(self) -> bool:
-        return self.path is not None and env_file.is_writable(self.path)
+        return (
+            self.path is not None
+            and not self.readonly
+            and self._read_error is None
+            and env_file.is_writable(self.path)
+        )
 
     def status(self, declared: dict[str, Declared]) -> dict:
         file_writable = self.file_is_writable()
@@ -133,22 +152,19 @@ class EnvSettings:
             return "Set in the OS environment, which takes precedence"
         if self.path is None:
             return "This engine has no environment file"
+        if self.readonly:
+            return "Read-only mode (--readonly): the environment file is not changed"
+        if self._read_error is not None:
+            return self._read_error
         if not file_writable:
             return "The environment file is read-only"
         return None
 
     # --- changes ---
 
-    def set_value(self, name: str, value: str, declared: dict[str, Declared]) -> None:
-        """Store ``value`` for ``name``: file first, then nodes see it."""
-        self._write(name, value, declared)
-
-    def remove_value(self, name: str, declared: dict[str, Declared]) -> None:
-        """Remove ``name`` from the file; nodes then read it as unset."""
-        self._write(name, None, declared)
-
-    def _write(self, name: str, value: str | None, declared: dict[str, Declared]) -> None:
-        # The file is written first; only then do nodes see the change
+    def require_write(self, name: str, value: str | None, declared: dict[str, Declared]) -> Path:
+        """The file to write ``name`` into, or ``EnvSettingError`` saying why
+        not. Reads only memory: runs on the event loop."""
         reason = environment.name_refusal(name)
         if reason:
             raise EnvSettingError(400, reason)
@@ -158,15 +174,31 @@ class EnvSettings:
                 raise EnvSettingError(400, reason)
         reason = self._write_refusal(name, declared, self.file_is_writable())
         if reason:
-            raise EnvSettingError(403 if self.path is not None else 409, reason)
+            raise EnvSettingError(409 if self.path is None or self._read_error else 403, reason)
         assert self.path is not None
-        try:
-            env_file.write_value(self.path, name, value)
-        except env_file.EnvFileError as e:
-            raise EnvSettingError(409, str(e)) from None
+        return self.path
+
+    def apply_write(self, name: str, value: str | None) -> None:
+        """After the file was written: nodes see the change."""
         environment.update({name: value})
         if value is None:
             self._file_names.discard(name)
         else:
             self._file_names.add(name)
         logger.info(f"Environment value {name} {'set' if value is not None else 'removed'} ({self.path})")
+
+    def set_value(self, name: str, value: str, declared: dict[str, Declared]) -> None:
+        """Store ``value`` for ``name`` (all three steps, here)."""
+        self._write(name, value, declared)
+
+    def remove_value(self, name: str, declared: dict[str, Declared]) -> None:
+        """Remove ``name`` from the file; nodes then read it as unset."""
+        self._write(name, None, declared)
+
+    def _write(self, name: str, value: str | None, declared: dict[str, Declared]) -> None:
+        path = self.require_write(name, value, declared)
+        try:
+            env_file.write_value(path, name, value)
+        except env_file.EnvFileError as e:
+            raise EnvSettingError(409, str(e)) from None
+        self.apply_write(name, value)

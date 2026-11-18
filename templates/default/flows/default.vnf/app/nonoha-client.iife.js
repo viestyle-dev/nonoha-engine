@@ -688,9 +688,14 @@ var NonohaClient = (() => {
       if (!this.socket) return;
       this.setStatus(hidden ? { state: "hidden", reasons: [] } : this.engineStatus);
     }
-    /** Ask the engine to resume after it paused itself (e.g. after a load spike). */
-    resume() {
-      this.sendJson({ op: "resume" });
+    /**
+     * End the engine's own pause now (it paused sampling because its event
+     * loop lagged; it would resume by itself once that recovers). Only for an
+     * explicit user action: `pause`/`resume` from tab visibility concern this
+     * connection alone.
+     */
+    forceResume() {
+      this.sendJson({ op: "force_resume" });
     }
     // --- watches ---------------------------------------------------------------------
     watch(ref, options, callbacks) {

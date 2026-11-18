@@ -18,8 +18,8 @@ uv run main.py --vnf templates/default/flows/default.vnf --plugins ./templates/d
 # Install dependencies
 uv sync
 
-# Run tests
-uv run pytest tests -s
+# Run tests (as CI does: a text open() without encoding="utf-8" fails)
+PYTHONWARNDEFAULTENCODING=1 uv run pytest tests -s
 
 # Generate node catalog (JSON)
 uv run main.py catalog
@@ -85,13 +85,13 @@ taskkill //PID <PID> //F
 ```
 plugins/
 ├── manifest.json                 # Plugin registry
-└── my_plugin/                    # Plugin directory (underscores)
+└── my-plugin/                    # Plugin directory (hyphens)
     ├── pyproject.toml            # Package metadata
-    ├── my_plugin/                # Python package (same name)
-    │   ├── __init__.py           # register_nodes(registry) — REQUIRED
-    │   └── nodes.py              # Node implementations
-    └── static/                   # Optional web files, outside the Python package (not in the wheel) — see "Plugin Static Files"
-        └── views/                # e.g. views for editors and apps (see the workspace's AGENTS.md)
+    └── my_plugin/                # Python package (underscores)
+        ├── __init__.py           # register_nodes(registry) — REQUIRED
+        ├── nodes.py              # Node implementations
+        └── static/               # Optional web files (package data) — see "Plugin Static Files"
+            └── views/            # e.g. views for editors and apps (see the workspace's AGENTS.md)
 ```
 
 ### manifest.json
@@ -146,14 +146,19 @@ Keep heavy or device imports out of the package's `__init__` top level.
 ## Plugin Static Files (static/)
 
 A plugin can ship web files (e.g. views that editors and apps show) in a
-`static/` folder at its root, next to the Python package; wheels do not
-contain it. The engine serves the folder read-only at
-`/plugins/{plugin_id}/static/` (JS as `text/javascript`, `nosniff`) and lists
-it in `GET /node-flow/plugins` with a revision `rev` that changes when a file
-changes (for cache-busting URLs). The engine and Python code never look
-inside: ports stay plain arrays. A frozen build serves the folders from
-`--plugin-static` (e.g. nonoha Hub copies them into
-`dist/<ws>/plugin_static/`).
+`static/` folder inside its Python package (package data): it goes wherever
+the package goes, so a plugin loaded from its folder, installed in
+site-packages or built into an app serves the same files, found next to its
+module (`importlib.resources`). Wheels contain it; a plugin that wants
+leaner wheels for runtimes without a browser (mobile) can exclude it in its
+own build settings. A builder that bundles plugins as code (an app built
+with PyInstaller) adds each package's `static/` as data next to the module.
+
+The engine serves the folder read-only at `/plugins/{plugin_id}/static/` (JS
+as `text/javascript`, `nosniff`, revalidated on every load) and lists it in
+`GET /node-flow/plugins` with a revision `rev` taken when the engine starts
+(for cache-busting URLs). The engine and Python code never look inside:
+ports stay plain arrays.
 
 What the files mean belongs to the hosts that load them. For views, see
 "Custom Views" in the workspace's AGENTS.md (from the workspace template).
@@ -166,13 +171,39 @@ The engine samples port values for monitoring without changing the graph:
 activity, peek, in-node previews and dashed connections.
 
 - Costs nothing while nobody watches; latest value only, never a queue.
+- A sample is taken during a dispatch, only when one is due (the first
+  dispatch after that, sent at the next tick): what it shows was dispatched
+  even when the sender reuses its buffer, and a dispatch between samples
+  copies nothing. A new watch (and a snapshot) starts from the port's
+  current value, which a sender writing into its buffer between dispatches
+  can have changed.
 - Bounded: per-session byte budget, at most 2 unacknowledged frames, and it
-  pauses itself when the event loop lags (resumes when it recovers).
+  pauses itself when the event loop lags (resumes when it recovers, or on
+  the client's `force_resume`; `pause`/`resume` only stop and restart one
+  session's stream, e.g. a hidden tab).
 - Sampled values can miss updates; values an app relies on go through
   `$output` ports.
 - `--inspector on|off` (default on); `GET /node-flow/capabilities` reports
   `{"engine", "inspector": {"enabled", "protocol"}, "plugin_static", "env_settings"}`.
 - Client: `NonohaClient.InspectorClient` (nonoha-client-js).
+
+## Engine Root Layout
+
+The folder of the app the engine runs in (its *root*) holds the files that
+ship with it; each is found there unless an argument names it:
+
+```
+<root>/
+  flows/default.vnf     --vnf
+  editor_html/          --editor-html
+  plugins/              --plugins (read when it holds a manifest.json)
+```
+
+The root is `RuntimeConfig.app_dir` when the launcher states it, else the
+folder of the program that was started (`sys.argv[0]`). A launcher that can
+be started by name from `PATH` (where `argv[0]` is a bare name) states it, so
+the engine never reads flows or plugins from the current directory. The
+`.env` is not part of the root (see below).
 
 ## Environment Values (API keys and per-machine settings)
 
@@ -206,12 +237,24 @@ class MyApiNode(BaseNode):
   editor lists it, and the engine accepts values only for declared names.
 - **Never** put a value in a property, a port, a log line or an error text
   (mask it: `message.replace(key, "***")`).
-- Where values come from: the workspace's `.env` (`<workspace>/.env`, loaded
-  into `os.environ` at start; never published, exported or built), the OS
-  environment (it wins over `.env`), and values set while running (the
-  editor's Environment settings; `GET/PUT/DELETE /node-flow/env`, which
-  never return values). Built apps use a per-user `.env`
-  (`nonoha/apps/<app_id>/.env` under the OS's local app data).
+- Where values come from: a `.env` (loaded into `os.environ` at start;
+  never published, exported or built), the OS environment (it wins over
+  `.env`), and values set while running (the editor's Environment settings;
+  `GET/PUT/DELETE /node-flow/env`, which never return values).
+- Which `.env`: only the one the launcher names. `--env-file PATH`
+  (`RuntimeConfig.env_file`): a workspace's `<workspace>/.env` (nonoha Hub
+  and `nonoha ws run` pass it; started by hand, add `--env-file .env`).
+  `RuntimeConfig.app_id`: an app's per-user `.env`, never next to the
+  executable:
+  - Windows: `%LOCALAPPDATA%\nonoha\apps\<app_id>\.env`
+  - macOS: `~/Library/Application Support/nonoha/apps/<app_id>/.env`
+  - Linux and others: `~/.config/nonoha/apps/<app_id>/.env` (not
+    `$XDG_CONFIG_HOME`: the place must not depend on how the app was
+    started)
+
+  Otherwise there is no `.env`. A file that cannot be read (not UTF-8, a
+  folder) is reported and left untouched; the engine starts without it.
+  `--readonly` never changes it.
 - Names that steer processes or libraries (`PATH`, `*_PROXY`, `PYTHON*`,
   `SSL_*`, `NONOHA_*`, ...) cannot be written by clients; libraries' own
   settings (proxy, certificates, `OMP_NUM_THREADS`) belong in the OS
@@ -233,11 +276,18 @@ deployment's own copy.
 The engine has no login: whoever reaches it can edit graphs and run code.
 
 - It refuses requests from other web sites (CSRF) and from rebound host
-  names (DNS rebinding): `Origin` must be the same origin, loopback, a
-  private-network address or a `.local`/single-label name; `Host` must be an
-  IP address, `localhost`, a single-label or `.local` name, or this machine's
-  name. Same-machine use, LAN use (`--host 0.0.0.0`), the dev editor on
-  another port, SSH forwarding and VPN IPs need nothing.
+  names (DNS rebinding): `Origin` must be the same origin or loopback, or,
+  when the engine listens on the network (`--host` not loopback), a
+  private-network address or a `.local`/single-label name; only web origins
+  (http, https, ws, wss) count, so browser extensions and webviews need
+  `--allow-origin`. `Host` must be an IP address, `localhost`, a
+  single-label or `.local` name, or this machine's name. Same-machine use,
+  LAN use (`--host 0.0.0.0`), the dev editor on another port, SSH
+  forwarding and VPN IPs need nothing.
+- On loopback (the default `127.0.0.1`), pages served from the LAN (a
+  captive portal, a router's admin page) are refused: through this
+  machine's browser they could otherwise reach an engine nothing on the
+  LAN can.
 - Tunnels, VPN host names and company DNS names: `--allow-host NAME`
   (repeatable; `.example.com` also allows subdomains). Pages on other sites:
   `--allow-origin https://dash.example.com`. Built apps:

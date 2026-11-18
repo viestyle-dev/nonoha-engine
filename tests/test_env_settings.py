@@ -51,21 +51,94 @@ def test_write_is_atomic_private_and_creates_folders(tmp_path):
 
 
 def test_resolve(tmp_path, monkeypatch):
-    ws = tmp_path / "ws"
-    vnf = ws / "flows" / "default.vnf"
-    vnf.mkdir(parents=True)
     explicit = tmp_path / "kiosk.env"
-    assert env_file.resolve(str(explicit), "app-1", vnf, frozen=True) == explicit.resolve()
-    # Development: the workspace root above flows/, never the working directory
+    assert env_file.resolve(str(explicit), "app-1") == explicit.resolve()
+    # An app: the per-user folder by app id, never next to the executable
+    assert env_file.resolve(None, "cv_demo-7f3a9c21") == env_file.per_user_dir() / "cv_demo-7f3a9c21" / ".env"
+    # Otherwise none: the engine does not guess (a launcher passes --env-file)
     monkeypatch.chdir(tmp_path)
-    assert env_file.resolve(None, None, vnf, frozen=False) == ws.resolve() / ".env"
-    assert env_file.resolve(None, None, tmp_path / "x.vnf", frozen=False) is None
-    # Built app: per-user folder by app id, never next to the executable
-    assert env_file.resolve(None, "cv_demo-7f3a9c21", vnf, frozen=True) == env_file.per_user_dir() / "cv_demo-7f3a9c21" / ".env"
-    assert env_file.resolve(None, None, vnf, frozen=True) is None
+    (tmp_path / ".env").write_text("A=1\n", encoding="utf-8")
+    assert env_file.resolve(None, None) is None
     for bad in ("../x", "a/b", "..", "with space"):
         with pytest.raises(ValueError):
-            env_file.resolve(None, bad, vnf, frozen=True)
+            env_file.resolve(None, bad)
+
+
+@pytest.mark.parametrize(
+    "platform, environ, expected",
+    [
+        ("win32", {"LOCALAPPDATA": "C:/Users/u/AppData/Local"}, "C:/Users/u/AppData/Local/nonoha/apps"),
+        ("win32", {}, "HOME/AppData/Local/nonoha/apps"),
+        ("darwin", {}, "HOME/Library/Application Support/nonoha/apps"),
+        ("linux", {}, "HOME/.config/nonoha/apps"),
+        # Not $XDG_CONFIG_HOME: the place must not depend on how the app was started
+        ("linux", {"XDG_CONFIG_HOME": "/elsewhere"}, "HOME/.config/nonoha/apps"),
+        ("freebsd14", {}, "HOME/.config/nonoha/apps"),
+    ],
+)
+def test_per_user_dir_on_each_os(monkeypatch, tmp_path, platform, environ, expected):
+    monkeypatch.setattr(env_file.sys, "platform", platform)
+    monkeypatch.setattr(env_file.Path, "home", classmethod(lambda cls: pathlib.Path("HOME")))
+    for name in ("LOCALAPPDATA", "XDG_CONFIG_HOME"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environ.items():
+        monkeypatch.setenv(name, value)
+    assert env_file.per_user_dir() == pathlib.Path(expected)
+
+
+def test_a_write_that_changes_nothing_creates_nothing(tmp_path):
+    path = tmp_path / "apps" / "demo" / ".env"
+    assert env_file.write_value(path, "KEY", None) is False
+    assert not path.parent.exists()
+    assert env_file.write_value(path, "KEY", "v") is True
+    mtime = path.stat().st_mtime_ns
+    assert env_file.write_value(path, "KEY", "v") is False
+    assert path.stat().st_mtime_ns == mtime
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="symbolic links need a privilege on Windows")
+def test_a_linked_env_file_updates_its_target(tmp_path):
+    target = tmp_path / "secrets" / "project.env"
+    target.parent.mkdir()
+    target.write_text("A=1\n", encoding="utf-8")
+    link = tmp_path / ".env"
+    link.symlink_to(target)
+    env_file.write_value(link, "B", "2")
+    assert link.is_symlink()
+    assert env_file.read(target) == {"A": "1", "B": "2"}
+
+
+@pytest.mark.parametrize("kind", ["utf16", "folder"])
+def test_an_unreadable_env_file_does_not_stop_the_engine(tmp_path, clean_env, kind):
+    path = tmp_path / ".env"
+    if kind == "utf16":
+        path.write_bytes("TEST_KEY=x\n".encode("utf-16"))  # PowerShell 5.1 `echo ... > .env`
+    else:
+        path.mkdir()  # python -m venv .env
+    settings = EnvSettings(path)
+    settings.load_into_process()  # warns, does not raise
+    flow = _flow("TEST_KEY")
+    status = settings.status(declared_env(flow))
+    assert not status["writable"] and "Cannot read" in status["items"][0]["reason"]
+    with pytest.raises(EnvSettingError) as e:
+        settings.set_value("TEST_KEY", "v", declared_env(flow))
+    assert e.value.status_code == 409
+    if kind == "utf16":
+        assert path.read_bytes().decode("utf-16") == "TEST_KEY=x\n"  # never overwritten
+
+
+def test_read_only_mode_never_changes_the_file(tmp_path, clean_env):
+    path = tmp_path / ".env"
+    path.write_text("TEST_KEY=old\n", encoding="utf-8")
+    settings = EnvSettings(path, readonly=True)
+    settings.load_into_process()
+    flow = _flow("TEST_KEY")
+    item = settings.status(declared_env(flow))["items"][0]
+    assert not item["writable"] and "--readonly" in item["reason"]
+    with pytest.raises(EnvSettingError) as e:
+        settings.set_value("TEST_KEY", "new", declared_env(flow))
+    assert e.value.status_code == 403
+    assert env_file.read(path) == {"TEST_KEY": "old"}
 
 
 # --- the engine's settings ---------------------------------------------------
@@ -312,7 +385,7 @@ def test_engine_env_endpoints(tmp_path, clean_env):
             flow = NodeFlow(registry)
             flow.readonly = True
             app, _, _ = await nonoha_engine._generate_app(
-                registry, flow, engine_root, vnf, PluginHost(tmp_path / "none"), RuntimeConfig(),
+                registry, flow, engine_root, vnf, PluginHost(), RuntimeConfig(),
                 tmp_path / "plugins", editor_html_path=None, env_settings=settings,
             )
             registry.register_node("AiNode", _AiNode)

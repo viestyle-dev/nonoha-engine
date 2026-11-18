@@ -32,7 +32,7 @@ def start_server(tmp_path, inspector_enabled=True):
     shutil.copytree(TEMPLATE / "flows" / "default.vnf", vnf)
     plugins = tmp_path / "plugins"
     shutil.copytree(TEMPLATE / "plugins", plugins)
-    static = plugins / "user-nodes" / "static" / "views"
+    static = plugins / "user-nodes" / "user_nodes" / "static" / "views"
     static.mkdir(parents=True, exist_ok=True)
     (static / "manifest.json").write_text('{"sdk": 1, "views": []}', encoding="utf-8")
     (static / "hello.js").write_text("export const hello = 1;\n", encoding="utf-8")
@@ -49,7 +49,7 @@ def start_server(tmp_path, inspector_enabled=True):
             flow = NodeFlow(registry)
             flow.readonly = True
             app, _, _ = await nonoha_engine._generate_app(
-                registry, flow, ENGINE_ROOT, vnf, PluginHost(tmp_path / "none"), RuntimeConfig(),
+                registry, flow, ENGINE_ROOT, vnf, PluginHost(), RuntimeConfig(),
                 plugins, editor_html_path=None, inspector_enabled=inspector_enabled,
             )
             config = uvicorn.Config(app, host="127.0.0.1", port=0, loop="asyncio",
@@ -185,3 +185,113 @@ def test_request_guard_is_wired_for_http_and_websocket(server):
     with connect(f"ws://127.0.0.1:{server}/node-flow/graphs/app/endpoint/ws",
                  additional_headers={"Origin": f"http://127.0.0.1:{server}"}, open_timeout=5):
         pass
+
+
+def test_an_unknown_output_is_404(server):
+    with pytest.raises(urllib.error.HTTPError) as err:
+        urllib.request.urlopen(f"http://127.0.0.1:{server}/node-flow/graphs/app/outputs/nope/values", timeout=5)
+    assert err.value.code == 404
+
+
+# --- the host without a server ----------------------------------------------------------
+
+class _Socket:
+    """A WebSocket that delivers ``texts`` and records what is sent."""
+
+    def __init__(self, texts):
+        self._texts = list(texts)
+        self.sent = []
+        self.closed = False
+
+    async def accept(self):
+        pass
+
+    async def receive(self):
+        await asyncio.sleep(0)
+        if self._texts:
+            return {"type": "websocket.receive", "text": self._texts.pop(0)}
+        await asyncio.sleep(0.05)
+        return {"type": "websocket.disconnect"}
+
+    async def send_text(self, text):
+        self.sent.append(json.loads(text))
+
+    async def send_bytes(self, data):
+        self.sent.append(bytes(data))
+
+    async def close(self, code=1000):
+        self.closed = True
+
+
+def _graph_flow():
+    import numpy as np
+
+    from nonoha_core.data_type import DataType, PortValueType
+    from nonoha_core.node import BaseNode, BaseNodeGraph
+    from nonoha_core.port import StaticTypeOutputPort
+
+    class Source(BaseNode):
+        def __init__(self, name):
+            super().__init__(name, "Source")
+            self.outputs["out"] = StaticTypeOutputPort("out", [PortValueType(DataType.Float32)])
+
+    graph = BaseNodeGraph("g", {})
+    graph.add_node(Source("Source_1"))
+
+    class Flow:
+        def get_graph(self, name):
+            return graph if name == "g" else None
+
+    return Flow()
+
+
+def test_operations_after_close_leave_nothing_subscribed():
+    from nonoha_engine.node_flow.inspector_ws import InspectorHost
+
+    host = InspectorHost(_graph_flow(), enabled=True)
+    socket = _Socket([
+        json.dumps({"op": "close"}),
+        json.dumps({"op": "watch", "id": 1, "node": "Source_1", "port": "out", "batch": "since"}),
+        json.dumps({"op": "activity", "ports": [{"id": 1, "node": "Source_1", "port": "out"}]}),
+    ])
+    asyncio.run(host.handle(socket, "g"))
+    assert socket.closed and not host.inspector._probes and not host.inspector.sessions
+
+
+def test_huge_numbers_get_an_error_reply_not_a_crash():
+    from nonoha_engine.node_flow.inspector_ws import InspectorHost
+
+    host = InspectorHost(_graph_flow(), enabled=True)
+    socket = _Socket(['{"op": "unwatch", "id": 1e999}'])
+
+    async def run():
+        await host.handle(socket, "g")
+        await asyncio.sleep(0.05)  # let the sender drain
+
+    asyncio.run(run())
+    assert any(m.get("t") == "error" and m.get("code") == "bad_request" for m in socket.sent if isinstance(m, dict))
+
+
+def test_the_outbox_keeps_the_newest_activity_and_cuts_off_a_client_that_does_not_read():
+    from nonoha_engine.node_flow.inspector_ws import Outbox, OutboxFull
+
+    async def run():
+        socket = _Socket([])
+        outbox = Outbox(socket, limit=4)
+        outbox.put({"t": "hello"})
+        outbox.put({"t": "activity", "n": 1})
+        outbox.put(bytearray(b"frame"))
+        outbox.put({"t": "activity", "n": 2})  # replaces n=1 in its place
+        outbox.put({"t": "status", "s": "ok"})
+        drain = asyncio.create_task(outbox.drain())
+        await asyncio.sleep(0.01)
+        drain.cancel()
+        assert socket.sent == [{"t": "hello"}, {"t": "activity", "n": 2}, b"frame", {"t": "status", "s": "ok"}]
+
+        stuck = Outbox(_Socket([]), limit=3)
+        for i in range(3):
+            stuck.put({"t": "error", "i": i})
+        with pytest.raises(OutboxFull):
+            stuck.put({"t": "error", "i": 3})
+
+    asyncio.run(run())

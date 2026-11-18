@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-from nonoha_engine.request_guard import RequestGuard, is_public_name, split_host
+from nonoha_engine.request_guard import RequestGuard, is_loopback_bind, is_public_name, split_host
 
 
 async def _ok_app(scope, receive, send):
@@ -64,8 +64,8 @@ def make(**kw):
         ("192.168.1.11:8000", "http://192.168.1.10:8000"),
         ("100.101.102.103:8000", "http://100.101.102.103:8000"),
         ("100.101.102.104:8000", "http://100.101.102.103:8000"),
-        # Hub window (Tauri) and this machine's own host name
-        ("127.0.0.1:8000", "tauri://localhost"),
+        # A page from a *.localhost name (a webview's virtual host) and this
+        # machine's own host name
         ("127.0.0.1:8000", "http://tauri.localhost"),
         ("kiosk01:8000", "http://kiosk01:8000"),
     ],
@@ -177,3 +177,58 @@ def test_decisions_are_cached_and_bounded():
     for i in range(600):
         _call(guard, f"h{i}.example.com")
     assert len(guard._host_cache) <= 256
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        # Browser extensions and webviews: the "host" is an opaque id with no dot,
+        # which must not pass as a LAN name
+        "chrome-extension://abcdefghijklmnopabcdefghijklmnop",
+        "moz-extension://1b2c3d4e-0000-4000-8000-000000000000",
+        "safari-web-extension://abcdef",
+        "vscode-webview://0abc",
+        "tauri://localhost",
+    ],
+)
+def test_non_web_origins_need_an_allowance(origin):
+    assert _status(_call(make(), "127.0.0.1:8000", origin)) == 403
+    assert _status(_call(make(allow_origins=[origin]), "127.0.0.1:8000", origin)) == 200
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "http://10.0.0.1",  # a captive portal
+        "http://192.168.1.1",  # a router's admin page
+        "http://192.168.1.20:3000",  # another machine's page
+        "http://printer.local",
+        "http://raspberrypi:8000",
+        "http://100.101.102.103:8000",
+    ],
+)
+def test_an_engine_on_loopback_refuses_pages_from_the_lan(origin):
+    on_loopback = make(lan_origins=False)
+    assert _status(_call(on_loopback, "127.0.0.1:8000", origin)) == 403
+    assert _status(_call(make(), "127.0.0.1:8000", origin)) == 200  # bound to the network: allowed
+    assert _status(_call(make(lan_origins=False, allow_origins=[origin]), "127.0.0.1:8000", origin)) == 200
+
+
+def test_an_engine_on_loopback_still_serves_this_machine():
+    on_loopback = make(lan_origins=False)
+    assert _status(_call(on_loopback, "127.0.0.1:8000", "http://127.0.0.1:8000")) == 200
+    assert _status(_call(on_loopback, "127.0.0.1:8765", "http://localhost:3000")) == 200
+    assert _status(_call(on_loopback, "[::1]:8000", "http://[::1]:8000")) == 200
+    assert _status(_call(on_loopback, "127.0.0.1:8000", "http://tauri.localhost")) == 200
+    assert _status(_call(on_loopback, "127.0.0.1:8000")) == 200  # no Origin: not a browser
+
+
+@pytest.mark.parametrize(
+    "host, loopback",
+    [
+        ("127.0.0.1", True), ("127.0.0.2", True), ("localhost", True), ("::1", True), ("[::1]", True),
+        ("0.0.0.0", False), ("::", False), ("192.168.1.5", False), ("kiosk.local", False),
+    ],
+)
+def test_is_loopback_bind(host, loopback):
+    assert is_loopback_bind(host) is loopback

@@ -56,7 +56,7 @@ client.dispatchInput({ portName: 'name', values: [{ dataType, shape, array }] })
 A view is a read-only display of port values. The editor shows it as a
 "View" node (add menu → Views); the app shows it with `NonohaViews`. It never
 writes to a graph: graph inputs come from the editor's input nodes or the app.
-Views live in `plugins/user-nodes/static/views/` as plain ES modules with no
+Views live in `plugins/user-nodes/user_nodes/static/views/` as plain ES modules with no
 imports (the browser loads them directly; see the example `spectrum-bars.js`):
 
 ```js
@@ -91,7 +91,7 @@ export default {
 - `manifest.json` next to the modules lists them as data. Generate it from
   the modules, e.g. with nonoha-views' tool (in nonoha-editor; without
   `--write` it compares):
-  `node <nonoha-views>/bin/view-manifest.mjs --write plugins/user-nodes/static/views`
+  `node <nonoha-views>/bin/view-manifest.mjs --write plugins/user-nodes/user_nodes/static/views`
 
 Show views in the app (`flows/default.vnf/app/` loads both IIFEs):
 
@@ -149,7 +149,7 @@ With `--host 0.0.0.0` anyone on the network can edit graphs and run code.
 | `flows/default.vnf/app/index.html` | Custom app UI |
 | `flows/default.vnf/graphs/app.vng/graph.json` | App backend graph definition |
 | `flows/default.vnf/graphs/app.vng/editors/nonoha-editor/models/settings.json` | Editor node layout (positions, display nodes, waypoints) |
-| `plugins/user-nodes/static/views/` | Custom views for the editor and apps |
+| `plugins/user-nodes/user_nodes/static/views/` | Custom views for the editor and apps |
 | `.env` | This machine's environment values (API keys); never committed, published or built |
 
 ## Technical Reference

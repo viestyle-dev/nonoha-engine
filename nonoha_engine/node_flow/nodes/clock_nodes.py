@@ -13,6 +13,7 @@ import numpy as np
 from nonoha_core.port import StaticTypeInputPort, StaticTypeOutputPort, PortValue
 from nonoha_core.node import BaseNode, NodeDoc
 from nonoha_core.data_type import DataType, PortValueType, PropertyDataType
+from nonoha_core.error_log import ErrorLog
 
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ class HiResClockNode(BaseNode):
         super().__init__(name, "HiResClock")
 
         self._rate = float(self.properties.get("rate", 30.0))
+        self._errors = ErrorLog(logger)
         self._tick_value = np.array([True], dtype=np.bool_)
 
         input_enabled = StaticTypeInputPort(
@@ -105,9 +107,17 @@ class HiResClockNode(BaseNode):
                 interval = 1.0 / self._rate
                 await loop.run_in_executor(None, time.sleep, interval)
 
-                self._output_tick.dispatch([self._tick_value])
+                # A failing downstream node must not stop the clock; what was
+                # dispatched before the failure is still flushed
+                try:
+                    self._output_tick.dispatch([self._tick_value])
+                except Exception:
+                    self._errors.exception(f"{self.name}: a node fed by the clock failed")
                 if self.parent_graph is not None:
-                    self.parent_graph.flush_outputs()
+                    try:
+                        self.parent_graph.flush_outputs()
+                    except Exception:
+                        self._errors.exception(f"{self.name}: flushing the graph's outputs failed")
 
         except asyncio.CancelledError:
             pass

@@ -178,7 +178,7 @@ class NodeFlow(BaseNodeFlow[NodeGraph]):
             extension = GraphFileExtension.JSON
             graph_file = dir_path / "graph.json"
             try:
-                with open(graph_file) as f:
+                with open(graph_file, encoding="utf-8") as f:
                     graph_model = NodeGraphModel.model_validate_json(f.read())
             except Exception as e:
                 raise ValueError(f"Failed to parse graph file: {graph_file}") from e
@@ -209,7 +209,7 @@ class NodeFlow(BaseNodeFlow[NodeGraph]):
 
         flow_file_path = dir_path / "flow.json"
         try:
-            with open(flow_file_path) as f:
+            with open(flow_file_path, encoding="utf-8") as f:
                 flow_model = NodeFlowModel.model_validate_json(f.read())
         except FileNotFoundError:
             raise FileNotFoundError(f"VNF flow file not found: {flow_file_path}")

@@ -40,7 +40,7 @@ from . import env_file
 from .env_settings import EnvSettings
 from .node_flow.catalog import catalog as build_catalog
 from .plugin_management.plugin_host import PluginHost
-from .request_guard import RequestGuard, is_public_name
+from .request_guard import RequestGuard, is_loopback_bind, is_public_name
 from .runtime_config import RuntimeConfig
 
 
@@ -78,8 +78,7 @@ def _set_process_priority_windows():
     # --- Disable CPU execution speed throttling (Windows 11+) ---
     # Windows 11 applies EcoQoS (CPU frequency reduction / E-core scheduling)
     # to processes without visible windows. When the engine is launched with
-    # CREATE_NO_WINDOW (e.g. from a GUI host app like nonoha-hub), this
-    # throttling degrades asyncio event loop responsiveness and WebSocket
+    # CREATE_NO_WINDOW (no console window), this throttling degrades asyncio event loop responsiveness and WebSocket
     # throughput. Explicitly opting out ensures consistent CPU performance.
     class PROCESS_POWER_THROTTLING_STATE(ctypes.Structure):
         _fields_ = [
@@ -185,6 +184,21 @@ def _static_rev(static_dir: pathlib.Path) -> str:
     return str(int(newest))
 
 
+def _engine_root(runtime_config: RuntimeConfig) -> pathlib.Path:
+    """The folder whose flows/, editor_html/ and plugins/ the engine uses
+    by default: ``RuntimeConfig.app_dir`` when the launcher states it, else
+    the folder of the program that was started."""
+    if runtime_config.app_dir:
+        return pathlib.Path(runtime_config.app_dir).resolve()
+    return pathlib.Path(sys.argv[0]).resolve().parent
+
+
+def _plugins_path(args, engine_root_path: pathlib.Path) -> pathlib.Path:
+    """``--plugins``, else ``<engine root>/plugins`` (read only when it holds
+    a manifest.json)."""
+    return pathlib.Path(args.plugins_path) if args.plugins_path else engine_root_path / "plugins"
+
+
 def _register_all_nodes(
     node_registry: NodeRegistry,
     plugin_host: PluginHost,
@@ -231,6 +245,7 @@ async def _generate_app(
     allow_origins: tuple[str, ...] | None = None,
     allow_hosts: tuple[str, ...] | None = None,
     env_settings: EnvSettings | None = None,
+    lan_origins: bool = True,
 ) -> tuple[FastAPI, bool, bool]:  # Returns app, has_editor_html, has_app_html
 
     _register_all_nodes(node_registry, plugin_host, runtime_config, plugins_path)
@@ -272,7 +287,7 @@ async def _generate_app(
     app.include_router(
         nonoha_engine.node_flow.router.generate_router(
             node_flow_instance,
-            inspector_host=inspector_host if inspector_enabled else None,
+            inspector_host=inspector_host,
             capabilities=capabilities,
             plugins=plugins,
             env_settings=env_settings,
@@ -321,6 +336,7 @@ async def _generate_app(
         RequestGuard,
         allow_origins=allow_origins if allow_origins is not None else runtime_config.allow_origins,
         allow_hosts=allow_hosts if allow_hosts is not None else runtime_config.allow_hosts,
+        lan_origins=lan_origins,
     )
 
     return app, has_editor_html, has_app_html
@@ -330,7 +346,7 @@ def command_fbc(args):
     from nonoha_engine.file_binary_converts import file_binary_converts
 
     if args.command == "encode":
-        with open(args.input_file, "r") as f:
+        with open(args.input_file, "r", encoding="utf-8") as f:
             text = f.read()
 
         # start_time = time.time()
@@ -343,7 +359,7 @@ def command_fbc(args):
         with open(args.input_file, "rb") as f:
             data = f.read()
         decoded = file_binary_converts.decode(data)
-        with open(args.output_file, "w") as f:
+        with open(args.output_file, "w", encoding="utf-8") as f:
             f.write(decoded)
 
 
@@ -352,17 +368,15 @@ async def command_catalog(runtime_config: RuntimeConfig, args):
     node_registry = NodeRegistry()
     plugin_host = PluginHost()
 
-    plugins_path = (
-        pathlib.Path(args.plugins_path) if args.plugins_path is not None else None
+    _register_all_nodes(
+        node_registry, plugin_host, runtime_config, _plugins_path(args, _engine_root(runtime_config))
     )
-
-    _register_all_nodes(node_registry, plugin_host, runtime_config, plugins_path)
 
     # Same shape as GET /node-flow/catalog/nodes
     catalog = build_catalog(node_registry)
 
     output_path = pathlib.Path(args.output)
-    output_path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2))
+    output_path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
     print(
         f"Catalog written to {output_path} ({len(catalog)} nodes)", file=sys.stderr
     )
@@ -506,14 +520,6 @@ async def main(runtime_config: RuntimeConfig):
     )
 
     parser.add_argument(
-        "--plugin-static",
-        type=str,
-        default=None,
-        help="Folder holding built-in plugins' static folders (<dir>/<plugin_id>/); default: <engine root>/plugin_static",
-        dest="plugin_static_path",
-    )
-
-    parser.add_argument(
         "--allow-host",
         action="append",
         default=[],
@@ -536,7 +542,7 @@ async def main(runtime_config: RuntimeConfig):
         type=str,
         default=None,
         metavar="PATH",
-        help="The .env file with this deployment's environment values (default: <workspace>/.env, or the per-user folder of a built app)",
+        help="The .env file with this deployment's environment values (default: the per-user folder of RuntimeConfig.app_id, else none)",
         dest="env_file",
     )
 
@@ -621,7 +627,7 @@ async def main(runtime_config: RuntimeConfig):
     if runtime_config.auto_set_process_priority:
         _set_process_priority()
 
-    engine_root_path = pathlib.Path(sys.argv[0]).parent
+    engine_root_path = _engine_root(runtime_config)
 
     # Resolve editor_html path: CLI argument takes priority, fallback to engine_root_path/editor_html
     if args.editor_html_path is not None:
@@ -644,12 +650,8 @@ async def main(runtime_config: RuntimeConfig):
     # plugins load and before any thread starts (setenv is not thread-safe).
     # Later changes only swap nonoha_core.environment's snapshot.
     env_settings = EnvSettings(
-        env_file.resolve(
-            args.env_file or runtime_config.env_file,
-            runtime_config.app_id,
-            pathlib.Path(args.vnf_file_path),
-            frozen=bool(getattr(sys, "frozen", False)),
-        )
+        env_file.resolve(args.env_file or runtime_config.env_file, runtime_config.app_id),
+        readonly=args.readonly,
     )
     env_settings.load_into_process()
 
@@ -659,10 +661,7 @@ async def main(runtime_config: RuntimeConfig):
     if args.readonly:
         logging.info("Read-only mode enabled")
 
-    plugin_static_path = args.plugin_static_path or runtime_config.plugin_static_path
-    plugin_host = PluginHost(
-        pathlib.Path(plugin_static_path) if plugin_static_path else engine_root_path / "plugin_static"
-    )
+    plugin_host = PluginHost()
     inspector_enabled = (
         runtime_config.inspector_enabled if args.inspector is None else args.inspector == "on"
     )
@@ -698,12 +697,13 @@ async def main(runtime_config: RuntimeConfig):
             pathlib.Path(args.vnf_file_path),
             plugin_host,
             runtime_config,
-            pathlib.Path(args.plugins_path) if args.plugins_path else None,
+            _plugins_path(args, engine_root_path),
             editor_html_path=editor_html_path,
             inspector_enabled=inspector_enabled,
             allow_origins=allow_origins,
             allow_hosts=allow_hosts,
             env_settings=env_settings,
+            lan_origins=not is_loopback_bind(args.host),
         )
         config = uvicorn.Config(
             app,
@@ -820,7 +820,23 @@ async def main(runtime_config: RuntimeConfig):
     # sys.exit(0)
 
 
+def _utf8_stdio() -> None:
+    """The engine reads and writes UTF-8 on its standard streams.
+
+    Python 3.11 uses the locale's encoding when a stream is a pipe (cp1252,
+    cp932 on Windows): a host reading the output as UTF-8 would see garbled
+    text, and print() could fail on a character the code page lacks. A
+    stream that is missing (a windowed build) or cannot be reconfigured is
+    left alone.
+    """
+    for stream in (sys.stdin, sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="backslashreplace")
+
+
 def run(runtime_config: RuntimeConfig):
+    _utf8_stdio()
     loop = asyncio.get_event_loop()
 
     try:

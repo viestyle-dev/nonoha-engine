@@ -46,11 +46,11 @@ MAIN_GRAPH = {
 def _write_vnf(root: pathlib.Path, graph_order: list[str]) -> pathlib.Path:
     vnf = root / "test.vnf"
     (vnf / "graphs").mkdir(parents=True)
-    (vnf / "flow.json").write_text(json.dumps({"graphs": graph_order}))
+    (vnf / "flow.json").write_text(json.dumps({"graphs": graph_order}), encoding="utf-8")
     for name, model in [("source", SOURCE_GRAPH), ("main", MAIN_GRAPH)]:
         graph_dir = vnf / "graphs" / f"{name}.vng"
         graph_dir.mkdir()
-        (graph_dir / "graph.json").write_text(json.dumps(model))
+        (graph_dir / "graph.json").write_text(json.dumps(model), encoding="utf-8")
     return vnf
 
 

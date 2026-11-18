@@ -246,7 +246,7 @@ class TestGraphRoundTrip:
                 saved = pathlib.Path(tmpdir) / "graph.json"
                 assert saved.exists()
 
-                text = saved.read_text()
+                text = saved.read_text(encoding="utf-8")
                 data = json.loads(text)
 
                 # SampleNode_1: no inputs, no property_groups → omitted
@@ -281,7 +281,7 @@ class TestGraphRoundTrip:
 
                 # Reload
                 saved = pathlib.Path(tmpdir) / "graph.json"
-                reloaded = file_model.NodeGraphModel.model_validate_json(saved.read_text())
+                reloaded = file_model.NodeGraphModel.model_validate_json(saved.read_text(encoding="utf-8"))
 
                 assert reloaded.properties == {"param": 42}
                 assert len(reloaded.nodes) == 2
@@ -293,3 +293,23 @@ class TestGraphRoundTrip:
                 assert reloaded.inputs["series"].types == ["f32", "f32[3]"]
 
         asyncio.run(_test())
+
+
+def test_graph_files_are_utf8_whatever_the_locale(tmp_path):
+    """Names and properties in any script survive a save and a load as UTF-8."""
+    model = file_model.NodeGraphModel(
+        properties={"タイトル": "日本語のグラフ"},
+        nodes={"ノード_1": file_model.NodeModel(type="SampleNode", properties={"ラベル": "こんにちは"})},
+        inputs={},
+        outputs={},
+        edges=[],
+    )
+    async def save():
+        persist = FileNodeGraphPersist(model, tmp_path, GraphFileExtension.JSON)
+        persist._write_graph(persist._take_graph_snapshot())
+
+    asyncio.run(save())
+    raw = (tmp_path / "graph.json").read_bytes()
+    assert "日本語のグラフ".encode("utf-8") in raw
+    reloaded = file_model.NodeGraphModel.model_validate_json(raw.decode("utf-8"))
+    assert reloaded.nodes["ノード_1"].properties["ラベル"] == "こんにちは"
