@@ -1,4 +1,4 @@
-/*! nonoha-client-js 1.1.0-dev.0 | Apache-2.0 */
+/*! nonoha-client-js 1.1.0 | Apache-2.0 */
 "use strict";
 var NonohaClient = (() => {
   var __defProp = Object.defineProperty;

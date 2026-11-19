@@ -1,4 +1,4 @@
-/*! nonoha-views 1.1.0-dev.0 (view SDK 1) | Apache-2.0 */
+/*! nonoha-views 1.1.0 (view SDK 1) | Apache-2.0 */
 "use strict";
 var NonohaViews = (() => {
   var __defProp = Object.defineProperty;
@@ -115,8 +115,14 @@ var NonohaViews = (() => {
     let pending = [];
     let running = [];
     let destroyed = false;
+    let visible = true;
+    const observer = typeof IntersectionObserver === "undefined" ? null : new IntersectionObserver((entries) => {
+      visible = entries[entries.length - 1].isIntersecting;
+      if (visible && pending.length > 0 && frame === null && !destroyed) frame = requestAnimationFrame(runFrame);
+    });
     const runFrame = () => {
       frame = null;
+      if (!visible) return;
       const draws = pending;
       pending = running;
       running = draws;
@@ -141,7 +147,7 @@ var NonohaViews = (() => {
       requestFrame(draw) {
         if (destroyed) return;
         if (pending.indexOf(draw) < 0) pending.push(draw);
-        if (frame === null) frame = requestAnimationFrame(runFrame);
+        if (frame === null && visible) frame = requestAnimationFrame(runFrame);
       },
       get settings() {
         return settings;
@@ -159,6 +165,7 @@ var NonohaViews = (() => {
     } catch (error) {
       report(error);
     }
+    observer?.observe(element);
     return {
       deliver(input, values, info = WHOLE) {
         const list = listeners.get(input);
@@ -187,6 +194,7 @@ var NonohaViews = (() => {
       },
       destroy() {
         destroyed = true;
+        observer?.disconnect();
         if (frame !== null) cancelAnimationFrame(frame);
         frame = null;
         pending.length = 0;

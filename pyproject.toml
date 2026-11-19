@@ -1,6 +1,6 @@
 [project]
 name = "nonoha-engine"
-version = "1.1.0.dev0"
+version = "1.1.0"
 description = "nonoha visual node engine"
 license = "AGPL-3.0-only"
 license-files = ["LICENSE", "COMMERCIAL-LICENSE.md", "COMMERCIAL-LICENSE_ja.md"]

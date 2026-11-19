@@ -4,25 +4,34 @@
     <img src="./assets/icon-512x512.png" width="256"/>
 </p>
 
-A visual node-based programming engine for data processing, device integration, and real-time analysis.
+A visual node-based programming engine for data processing, device integration, and real-time analysis. It builds graphs by combining nodes, loads plugins, and exchanges data with other applications over REST and WebSocket APIs. It can also serve the built editor and a web UI of your own.
 
-## Recommended Setup
+## The nonoha ecosystem
 
-For integrated development with both engine and editor, we recommend using the **nonoha-workspace**:
+nonoha is node-based programming redesigned for the era of developing together with AI: a Python framework for real-time signal processing and applications. AI agents write a graph as code, people edit the same graph as a diagram, and an engine with no GUI runs it.
 
-🔗 **[https://github.com/viestyle-dev/nonoha-workspace](https://github.com/viestyle-dev/nonoha-workspace)**
+<a href="https://hub.nonoha.dev/ecosystem/">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://hub.nonoha.dev/screens/ecosystem-dark.webp">
+    <img src="https://hub.nonoha.dev/screens/ecosystem-light.webp" width="100%" alt="The nonoha codebases in five layers, each depending on the ones below it. Tools and UIs: nonoha Hub, its CLI, nonoha-editor, custom web UIs, and your own apps. Clients: nonoha-client-js. Runtimes: nonoha-engine, and nonoha-embedded inside apps. Nodes: sci-nodes and plugins. Core: nonoha-core, on NumPy.">
+  </picture>
+</a>
 
-The workspace provides:
-- Unified development environment
-- Pre-configured project structure
-- Integrated plugin system
-- Build tools for production deployment
+| Layer | Codebases |
+| --- | --- |
+| Tools and UIs | [nonoha Hub and its CLI](https://hub.nonoha.dev/), [nonoha-editor](https://github.com/viestyle-dev/nonoha-editor), your own web UI or app |
+| Clients | [nonoha-client-js](https://github.com/viestyle-dev/nonoha-client-js) |
+| Runtimes | **nonoha-engine** (this repository; standalone), [nonoha-embedded](https://github.com/viestyle-dev/nonoha-embedded) (inside an app) |
+| Nodes | [sci-nodes](https://github.com/viestyle-dev/sci-nodes), [plugins](https://hub.nonoha.dev/plugins/) |
+| Core | [nonoha-core](https://github.com/viestyle-dev/nonoha-core) |
+
+The [nonoha website](https://hub.nonoha.dev/) has the [documentation](https://hub.nonoha.dev/docs/) and [workspaces](https://hub.nonoha.dev/workspaces/) to start from.
 
 ## Quick Start
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.11
 - [uv](https://github.com/astral-sh/uv) package manager
 - Git (for submodules)
 
@@ -56,10 +65,24 @@ uv run python main.py --port 8001
 
 The engine API will be available at `http://localhost:8000` (or your specified port).
 
-> **Editor UI**: the engine serves a node editor at `/editor` when an
-> `editor_html/` build is placed in the repository root. The editor build is
-> not included in this repository; it ships with VIE distributions such as
-> nonoha-hub.
+## Editor
+
+The engine serves [nonoha-editor](https://github.com/viestyle-dev/nonoha-editor), the browser-based graph editor, at `/editor`:
+
+![A graph in nonoha-editor: nodes and their connections above, live views of the data below](https://hub.nonoha.dev/screens/editor-motion.webp)
+
+Build the editor (Node.js 18.17 or later) and pass the build to the engine:
+
+```bash
+git clone --recursive https://github.com/viestyle-dev/nonoha-editor.git ../nonoha-editor
+cd ../nonoha-editor
+npm ci
+NEXT_PUBLIC_BASE_PATH=/editor npm run build   # PowerShell: $env:NEXT_PUBLIC_BASE_PATH="/editor"; npm run build
+cd ../nonoha-engine
+uv run python main.py --editor-html ../nonoha-editor/out
+```
+
+Then open `http://localhost:8000/editor`. Without `--editor-html`, the engine serves `editor_html/` in the repository root (not committed) when it exists.
 
 ## Command Line Options
 
@@ -69,11 +92,18 @@ uv run python main.py [OPTIONS]
 Options:
   --vnf PATH            Path to VNF (Visual Node Flow) file
   --plugins PATH        Path to plugins directory
-  --port INT           Server port (default: 8000)
-  --log-level LEVEL    Logging level (DEBUG, INFO, WARNING, ERROR)
-  --debug-save-log     Save logs to file for debugging
-  --version            Show version information
-  --help               Show help message
+  --host HOST           Address to listen on (default: 127.0.0.1; 0.0.0.0 for access from other machines)
+  --port INT            Server port (default: 8000)
+  --editor-html PATH    The editor's build to serve at /editor (default: editor_html/)
+  --readonly            Read-only mode: changes are not saved to disk
+  --inspector on|off    Inspector WebSocket endpoint for live port sampling (default: on)
+  --allow-host NAME     Accept this Host name (tunnels, VPN or company DNS names). Repeatable
+  --allow-origin ORIGIN Accept requests from pages at this origin (e.g. https://dash.example.com). Repeatable
+  --env-file PATH       The .env file with this deployment's environment values
+  --log-level LEVEL     Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  --debug-save-log      Save logs to file for debugging
+  --version             Show version information
+  --help                Show help message
 ```
 
 ## Tips
