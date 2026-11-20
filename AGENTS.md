@@ -570,7 +570,15 @@ Node type mapping:
 - `$graph` → canvas dimensions (no `type` field)
 - Display/input nodes outside the graph → `"$editor:<Type>_<suffix>": {"type", "x", "y", "width"?, "height"?, "label"?, "data": {...}}`
   (types, handle names and `data` settings: `editor_html/editor-nodes.json`; `nonoha ws catalog` writes it next to the catalog)
-- Waypoints → `"$wp:<id>": {"type": "WaypointNode", "x", "y"}` (relative to `$graph`)
+- Waypoints → `"$wp:<id>": {"type": "WaypointNode", "x", "y"}` (its center, relative to `$graph`)
+
+Positions are on the editor's 20 px grid, as a drag in the editor leaves them:
+`x` and `y` of a node (its top-left) are multiples of 20, and a waypoint's
+`x` and `y` (its center) are 10 plus a multiple of 20. Engine nodes, ports
+and waypoints are relative to the `$graph` frame, display and input nodes
+are absolute. On the grid, nodes at the same `y` have their port rows in line
+and ports of the same row join with a straight line (where the rows are:
+`grid` in `editor_html/editor-nodes.json`).
 
 `editor_edges` entries are `{"source", "sourceHandle", "target", "targetHandle", "waypoints"?}`,
 keyed `<source>[:<handle>]-<target>[:<handle>]`:

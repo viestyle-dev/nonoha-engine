@@ -44,7 +44,7 @@ from .request_guard import RequestGuard, is_loopback_bind, is_public_name
 from .runtime_config import RuntimeConfig
 
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 
 logger = logging.getLogger(__name__)
 
