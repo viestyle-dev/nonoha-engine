@@ -25,6 +25,8 @@ uv run nonoha-engine/main.py --vnf flows/default.vnf --plugins ./plugins
 Create processing nodes in `plugins/user-nodes/user_nodes/nodes.py`.
 See working examples: Synthesizer (multi-harmonic waveform synthesis) and SpectrumAnalyzer (FFT + band decomposition).
 
+Declare every property of a node in its `PROPERTIES`, with `description`, `data_type` and `default_value` (as the examples do). The property then gets an input port `@name`, so another node's output can set it. Types: real `f64`, integer `i32`, `bool`, text `str`.
+
 To discover all available built-in nodes:
 
 ```bash

@@ -39,6 +39,7 @@ Custom App: `http://localhost:8000/app`
 6. **Always call `notify_node_updated()`** after modifying ports in `set_properties()`
 7. **Python 3.11 only** — 3.12+ is not supported
 8. **Use `catalog` subcommand to discover nodes** — do NOT scan source files manually
+9. **Declare every property in `PROPERTIES`** with `description`, `data_type` and `default_value` — the property then gets an input port `@name` that other nodes can set. Types: real `f64`, integer `i32`, `bool`, text `str`. Never add a property only with `self.properties[...] = ...` in `__init__`
 
 ## Node Catalog
 

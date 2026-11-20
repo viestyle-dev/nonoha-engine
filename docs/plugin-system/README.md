@@ -163,7 +163,17 @@ from nonoha_core.data_type import DataType, PortValueType
 
 class HelloFromPluginNode(BaseNode):
     """Example node that adds a prefix to input values."""
-    
+
+    # Every property is declared here: its description, the type of its
+    # input port (`@prefix`), and its initial value.
+    PROPERTIES = {
+        "prefix": {
+            "description": "Text put before each value",
+            "data_type": "str",
+            "default_value": "Hello",
+        },
+    }
+
     def __init__(self, name: str):
         super().__init__(name, "HelloFromPlugin")
         
@@ -183,9 +193,8 @@ class HelloFromPluginNode(BaseNode):
         self.outputs[output_port.name] = output_port
         self._output_port = output_port
         
-        # Properties
-        self._prefix = "Hello"
-        self.properties["prefix"] = self._prefix
+        # The declared default is already in self.properties
+        self._prefix = str(self.properties["prefix"])
     
     def _on_input(self, values: list[np.ndarray]):
         """Process input and send to output."""

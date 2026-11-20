@@ -52,15 +52,43 @@ class PortValuesSendNode(BaseNode):
             outputs={"status": ""},
         )
 
+    PROPERTIES = {
+        "url": {
+            "description": "WebSocket URL of the remote graph",
+            "data_type": "str",
+            "default_value": "",
+        },
+        "target_port": {
+            "description": "Input port of the remote graph",
+            "data_type": "str",
+            "default_value": "",
+        },
+        "auto_reconnect": {
+            "description": "Reconnect when the connection is lost",
+            "data_type": "bool",
+            "default_value": True,
+        },
+        "reconnect_interval": {
+            "description": "Seconds between reconnection attempts",
+            "data_type": "f64",
+            "default_value": 5.0,
+        },
+        "value_types": {
+            "description": "Comma-separated value types (e.g. 'f32')",
+            "data_type": "str",
+            "default_value": "f32",
+        },
+    }
+
     def __init__(self, name: str):
         super().__init__(name, "PortValuesSend")
 
         # Connection settings
         # ex) ws://localhost:8080/node-flow/graphs/default/endpoint/ws
-        self._url = ""
-        self._target_port = ""
-        self._auto_reconnect = True
-        self._reconnect_interval = 5.0
+        self._url = str(self.properties["url"])
+        self._target_port = str(self.properties["target_port"])
+        self._auto_reconnect = bool(self.properties["auto_reconnect"])
+        self._reconnect_interval = float(self.properties["reconnect_interval"])
 
         # WebSocket connection
         self._websocket: Optional[websockets.ClientConnection] = None
@@ -70,14 +98,10 @@ class PortValuesSendNode(BaseNode):
         self._current_target_port = ""  # Store for send operations
         self._reconnect_event = asyncio.Event()  # Event for interruptible sleep
 
-        # Initialize properties
-        self.properties["url"] = self._url
-        self.properties["target_port"] = self._target_port
-        self.properties["auto_reconnect"] = self._auto_reconnect
-        self.properties["reconnect_interval"] = self._reconnect_interval
-
-        # Default input port with Float32 type
-        value_type_list = [PortValueType(DataType.Float32)]
+        value_type_list = [
+            name_to_port_value_type(name.strip())
+            for name in str(self.properties["value_types"]).split(",")
+        ]
         input_values = StaticTypeInputPort("values", value_type_list)
         input_values.subscribe(id(self), self._on_input_values)
 
@@ -89,11 +113,6 @@ class PortValuesSendNode(BaseNode):
         output_status = StaticTypeOutputPort("status", [PortValueType(DataType.Int32)])
         self.outputs["status"] = output_status
         self._output_status = output_status
-
-        # Add value_types property
-        self.properties["value_types"] = ",".join(
-            [value_type.name for value_type in value_type_list]
-        )
 
         # Initialize status
         self._update_status(ConnectionStatus.DISCONNECTED)

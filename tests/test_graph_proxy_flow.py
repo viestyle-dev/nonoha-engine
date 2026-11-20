@@ -72,7 +72,7 @@ def test_proxy_binds_and_forwards_through_vnf():
             assert main.parent_flow is flow
 
             proxy = main.get_node("GraphProxy_1")
-            assert set(proxy.inputs.keys()) == {"in"}
+            assert set(proxy.inputs.keys()) == {"@graph_name", "in"}
             assert set(proxy.outputs.keys()) == {"out"}
 
             received: list[list] = []
@@ -100,7 +100,7 @@ def test_proxy_stays_unbound_when_target_loads_later():
             main = flow.get_graph("main")
             assert main is not None
             proxy = main.get_node("GraphProxy_1")
-            assert proxy.inputs == {}
+            assert set(proxy.inputs.keys()) == {"@graph_name"}
             assert proxy.outputs == {}
 
             flow.finalize()
