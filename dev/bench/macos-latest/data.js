@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795151773858,
+  "lastUpdate": 1795182342208,
   "repoUrl": "https://github.com/viestyle-dev/nonoha-engine",
   "entries": {
     "nonoha-engine Benchmark (macos-latest)": [
@@ -505,6 +505,107 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 0.0000020523441859765247",
             "extra": "mean: 3.677692769032468 usec\nrounds: 157904"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "fivetwothreesix@gmail.com",
+            "name": "IOE",
+            "username": "ContentsViewer"
+          },
+          "committer": {
+            "email": "fivetwothreesix@gmail.com",
+            "name": "IOE",
+            "username": "ContentsViewer"
+          },
+          "distinct": true,
+          "id": "81410c92cc8f6bda860074c73e263b12ade9f1ed",
+          "message": "fix: update version to 1.2.1 and adjust waypoint position description in documentation",
+          "timestamp": "2026-11-20T22:43:20+09:00",
+          "tree_id": "e80f2416c2f60b99cbb4910b46f55a63cbd4b205",
+          "url": "https://github.com/viestyle-dev/nonoha-engine/commit/81410c92cc8f6bda860074c73e263b12ade9f1ed"
+        },
+        "date": 1795182340617,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "benchmarks/test_api_throughput.py::test_get_graphs",
+            "value": 719.193843509133,
+            "unit": "iter/sec",
+            "range": "stddev: 0.001443411774528361",
+            "extra": "mean: 1.390445717834209 msec\nrounds: 1570"
+          },
+          {
+            "name": "benchmarks/test_api_throughput.py::test_get_catalog_nodes",
+            "value": 130.62492249735004,
+            "unit": "iter/sec",
+            "range": "stddev: 0.001151957711019518",
+            "extra": "mean: 7.655506934523056 msec\nrounds: 168"
+          },
+          {
+            "name": "benchmarks/test_api_throughput.py::test_get_node_list",
+            "value": 747.6784577781689,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0006741199534096847",
+            "extra": "mean: 1.3374733344219116 msec\nrounds: 1531"
+          },
+          {
+            "name": "benchmarks/test_api_throughput.py::test_get_edges",
+            "value": 755.3264342035912,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00071507925864755",
+            "extra": "mean: 1.3239308922828714 msec\nrounds: 1244"
+          },
+          {
+            "name": "benchmarks/test_api_throughput.py::test_get_graph_inputs",
+            "value": 921.5643310872175,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0007351389817276466",
+            "extra": "mean: 1.085111441781007 msec\nrounds: 1460"
+          },
+          {
+            "name": "benchmarks/test_api_throughput.py::test_get_graph_outputs",
+            "value": 1009.590701585538,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0003939102597069894",
+            "extra": "mean: 990.5004061839358 usec\nrounds: 1423"
+          },
+          {
+            "name": "benchmarks/test_graph_operations.py::test_load_benchmark_vnf",
+            "value": 142.22929803494733,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0043150226085082585",
+            "extra": "mean: 7.030900200001611 msec\nrounds: 10"
+          },
+          {
+            "name": "benchmarks/test_graph_operations.py::test_create_100_nodes",
+            "value": 1247.308400500415,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0006774157731860836",
+            "extra": "mean: 801.7263409745369 usec\nrounds: 1745"
+          },
+          {
+            "name": "benchmarks/test_serialization_roundtrip.py::test_roundtrip_f32_small",
+            "value": 656680.6162769883,
+            "unit": "iter/sec",
+            "range": "stddev: 6.797830785406633e-7",
+            "extra": "mean: 1.5228102904413992 usec\nrounds: 78432"
+          },
+          {
+            "name": "benchmarks/test_serialization_roundtrip.py::test_roundtrip_f32_large",
+            "value": 96356.0861065629,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000187735221604845",
+            "extra": "mean: 10.378171638209464 usec\nrounds: 109087"
+          },
+          {
+            "name": "benchmarks/test_serialization_roundtrip.py::test_roundtrip_multi_value",
+            "value": 146816.2357232053,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013368577041176496",
+            "extra": "mean: 6.81123579469313 usec\nrounds: 132609"
           }
         ]
       }
